@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bentlyk/schemas/dynamic_state.json",
+  "title": "DynamicState",
+  "description": "The constantly-moving internal state: homeostatic signals, focus, and the current autonomy ceiling.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "energy", "pain", "surprise", "distrust", "curiosity", "attachment", "coherence", "autonomy"
+  ],
+  "properties": {
+    "energy": { "type": "number", "minimum": 0, "maximum": 1 },
+    "pain": { "type": "number", "minimum": 0, "maximum": 1 },
+    "surprise": { "type": "number", "minimum": 0, "maximum": 1 },
+    "distrust": { "type": "number", "minimum": 0, "maximum": 1 },
+    "curiosity": { "type": "number", "minimum": 0, "maximum": 1 },
+    "attachment": { "type": "number", "minimum": 0, "maximum": 1 },
+    "coherence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "focus": { "type": "string" },
+    "autonomy": {
+      "type": "string",
+      "enum": ["observe", "suggest", "safe_act", "escalated_act"]
+    },
+    "recent_successes": { "type": "integer", "minimum": 0 },
+    "recent_failures": { "type": "integer", "minimum": 0 },
+    "updated_at": { "type": "number" }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bentlyk/schemas/action.json",
+  "title": "Action & ActionResult",
+  "description": "A concrete tool invocation and its outcome.",
+  "type": "object",
+  "$defs": {
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tool"],
+      "properties": {
+        "id": { "type": "string" },
+        "tool": { "type": "string" },
+        "args": { "type": "object" },
+        "rationale": { "type": "string" },
+        "created_at": { "type": "number" }
+      }
+    },
+    "action_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "output"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "output": { "type": "string" },
+        "surprise": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "gate_decision": {
+      "type": "string",
+      "enum": ["allow", "suggest", "confirm", "deny"]
+    }
+  },
+  "properties": {
+    "action": { "$ref": "#/$defs/action" },
+    "result": { "$ref": "#/$defs/action_result" },
+    "gate": { "$ref": "#/$defs/gate_decision" }
+  }
+}

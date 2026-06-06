@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bentlyk/schemas/goal_candidate.json",
+  "title": "GoalCandidate",
+  "description": "A candidate goal. score = value_alignment + urgency + attachment + curiosity - risk - uncertainty.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "description", "source"],
+  "properties": {
+    "id": { "type": "string" },
+    "description": { "type": "string" },
+    "source": { "type": "string", "enum": ["external", "internal", "aspirational"] },
+    "value_alignment": { "type": "number", "minimum": 0, "maximum": 1 },
+    "urgency": { "type": "number", "minimum": 0, "maximum": 1 },
+    "attachment": { "type": "number", "minimum": 0, "maximum": 1 },
+    "curiosity": { "type": "number", "minimum": 0, "maximum": 1 },
+    "risk": { "type": "number", "minimum": 0, "maximum": 1 },
+    "uncertainty": { "type": "number", "minimum": 0, "maximum": 1 },
+    "created_at": { "type": "number" }
+  }
+}

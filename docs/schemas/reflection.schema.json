@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bentlyk/schemas/reflection.json",
+  "title": "Reflection",
+  "description": "The output of one sleep/consolidation pass. Proposals are surfaced for human validation, never auto-applied to identity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "consolidated", "pruned"],
+  "properties": {
+    "summary": { "type": "string" },
+    "consolidated": { "type": "integer", "minimum": 0 },
+    "pruned": { "type": "integer", "minimum": 0 },
+    "proposals": { "type": "array", "items": { "type": "string" } },
+    "created_at": { "type": "number" }
+  }
+}

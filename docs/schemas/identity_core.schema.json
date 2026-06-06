@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bentlyk/schemas/identity_core.json",
+  "title": "IdentityCore",
+  "description": "The almost-immutable spine of the agent. Changed only via human-validated reflection proposals.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "archetype", "purpose", "values", "boundaries", "voice"],
+  "properties": {
+    "name": { "type": "string" },
+    "archetype": { "type": "string" },
+    "purpose": { "type": "string" },
+    "values": { "type": "array", "items": { "type": "string" } },
+    "boundaries": { "type": "array", "items": { "type": "string" } },
+    "voice": { "type": "string" },
+    "relationships": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}
