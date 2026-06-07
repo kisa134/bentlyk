@@ -8,10 +8,17 @@ directly.
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .actions.permissions import AutonomyMode
+
+
+def _default_sqlite_path() -> Path:
+    # Use the temp dir so it's writable on serverless (Vercel's only writable
+    # path is /tmp); harmless locally.
+    return Path(tempfile.gettempdir()) / "bentlyk.db"
 
 # Default chat models per provider. OpenRouter slugs differ from native ones.
 _OPENROUTER_DEFAULT = "anthropic/claude-3.5-sonnet"
@@ -34,7 +41,7 @@ class Settings:
 
     # Storage
     store: str = "sqlite"  # "sqlite" | "postgres"
-    sqlite_path: Path = field(default_factory=lambda: Path("./bentlyk.db"))
+    sqlite_path: Path = field(default_factory=_default_sqlite_path)
     pg_dsn: str = ""
 
     # Behaviour
@@ -79,7 +86,8 @@ class Settings:
             model=model,
             reflection_model=_env("BENTLYK_REFLECTION_MODEL"),
             store=_env("BENTLYK_STORE") or ("postgres" if _env("BENTLYK_PG_DSN") else "sqlite"),
-            sqlite_path=Path(_env("BENTLYK_SQLITE_PATH") or "./bentlyk.db"),
+            sqlite_path=Path(_env("BENTLYK_SQLITE_PATH")) if _env("BENTLYK_SQLITE_PATH")
+            else _default_sqlite_path(),
             pg_dsn=_env("BENTLYK_PG_DSN"),
             max_autonomy=AutonomyMode.from_str(_env("BENTLYK_MAX_AUTONOMY") or "suggest"),
             identity=_env("BENTLYK_IDENTITY") or "default",

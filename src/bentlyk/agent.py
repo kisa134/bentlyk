@@ -66,10 +66,11 @@ class Agent:
         state: DynamicState | None = None,
     ) -> None:
         self.settings = settings or Settings.from_env()
-        self.store = store or open_store(
-            self.settings.store, sqlite_path=self.settings.sqlite_path, pg_dsn=self.settings.pg_dsn
-        )
-        self._persistence = self._open_persistence()
+        if store is not None:
+            self.store = store
+            self._persistence = StatePersistence.beside(self.settings.sqlite_path)
+        else:
+            self.store, self._persistence = self._open_backends()
 
         saved_identity, saved_state = self._persistence.load()
         # Precedence: explicit arg > persisted > named profile > built-in default.
@@ -156,12 +157,25 @@ class Agent:
 
         return self._finish(cycle)
 
-    def _open_persistence(self):
-        if self.settings.store == "postgres":  # pragma: no cover - needs a live database
-            from .pg import PgStatePersistence
+    def _open_backends(self):
+        """Pick the memory store + persistence, degrading gracefully.
 
-            return PgStatePersistence(self.settings.pg_dsn)
-        return StatePersistence.beside(self.settings.sqlite_path)
+        If Postgres is requested but unreachable/misconfigured, fall back to an
+        ephemeral SQLite store so the agent keeps talking (without long-term
+        memory) instead of hard-crashing. The failure is logged for diagnosis.
+        """
+
+        if self.settings.store == "postgres":  # pragma: no cover - needs a live database
+            try:
+                from .pg import PgMemoryStore, PgStatePersistence
+
+                store = PgMemoryStore(self.settings.pg_dsn)  # connects eagerly
+                return store, PgStatePersistence(self.settings.pg_dsn)
+            except Exception as exc:
+                print(f"[bentlyk] postgres unavailable ({exc}); using ephemeral sqlite", flush=True)
+
+        store = open_store("sqlite", sqlite_path=self.settings.sqlite_path)
+        return store, StatePersistence.beside(self.settings.sqlite_path)
 
     def sleep(self) -> Reflection:
         """Run a reflection/consolidation pass on demand."""
