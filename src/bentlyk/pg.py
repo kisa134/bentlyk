@@ -68,21 +68,28 @@ def _candidate_conninfos(dsn: str) -> list[str]:
     user = parts.username or ""
     pwd = parts.password or ""
     db = (parts.path or "/postgres").lstrip("/") or "postgres"
-    pairs: list[tuple[str, int]] = [(host, parts.port or 6543)]
+    # The project ref is the part after "postgres." in the pooler username.
+    ref = user.split(".", 1)[1] if "." in user else ""
+
+    # (user, host, port) candidates: pooler clusters first (IPv4, serverless-safe),
+    # then the direct host as a last resort (often IPv6-only).
+    triples: list[tuple[str, str, int]] = [(user, host, parts.port or 6543)]
     if ".pooler.supabase.com" in host:
         for cluster in ("aws-0", "aws-1"):
             base = re.sub(r"^aws-\d+", cluster, host)
             for port in (6543, 5432):
-                pairs.append((base, port))
+                triples.append((user, base, port))
+    if ref:  # direct connection uses the bare "postgres" user (no .ref suffix)
+        triples.append(("postgres", f"db.{ref}.supabase.co", 5432))
 
     out: list[str] = []
     seen: set = set()
-    for h, p in pairs:
-        if not h or (h, p) in seen:
+    for u, h, p in triples:
+        if not h or (u, h, p) in seen:
             continue
-        seen.add((h, p))
+        seen.add((u, h, p))
         out.append(
-            urlunsplit((parts.scheme, f"{user}:{pwd}@{h}:{p}", f"/{db}", "connect_timeout=5", ""))
+            urlunsplit((parts.scheme, f"{u}:{pwd}@{h}:{p}", f"/{db}", "connect_timeout=3", ""))
         )
     return out
 
@@ -120,10 +127,15 @@ def _connect(dsn: str):
         if cand not in order:
             order.append(cand)
 
+    from urllib.parse import urlsplit as _urlsplit
+
     last_exc: Exception | None = None
     for conninfo in order:
+        p = _urlsplit(conninfo)
+        tag = f"{p.username}@{p.hostname}:{p.port}"
         try:
             conn = _raw_connect(conninfo)
+            print(f"[bentlyk] db connected via {tag}", flush=True)
             try:
                 with open(_HOST_CACHE, "w") as fh:
                     fh.write(conninfo)
@@ -131,6 +143,7 @@ def _connect(dsn: str):
                 pass
             return conn
         except Exception as exc:  # try the next candidate host/port
+            print(f"[bentlyk] db try {tag} -> {type(exc).__name__}: {str(exc)[:80]}", flush=True)
             last_exc = exc
     raise last_exc if last_exc else RuntimeError("no connection candidates")
 
