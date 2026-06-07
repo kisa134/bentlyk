@@ -21,7 +21,9 @@ def _default_sqlite_path() -> Path:
     return Path(tempfile.gettempdir()) / "bentlyk.db"
 
 # Default chat models per provider. OpenRouter slugs differ from native ones.
-_OPENROUTER_DEFAULT = "anthropic/claude-3.5-sonnet"
+# gpt-4o-mini is a safe, always-available OpenRouter default; override with
+# BENTLYK_MODEL to use any other model (e.g. anthropic/claude-sonnet-4.5).
+_OPENROUTER_DEFAULT = "openai/gpt-4o-mini"
 _ANTHROPIC_DEFAULT = "claude-sonnet-4-6"
 
 

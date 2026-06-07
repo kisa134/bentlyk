@@ -83,11 +83,17 @@ class Planner:
                 plan=["lower exertion", "let reflection consolidate later"],
             )
 
-        raw = self._reasoner.complete(
-            system=identity.system_preamble(),
-            prompt=self._prompt(state, tempo, goal, memories),
-            max_tokens=600,
-        )
+        try:
+            raw = self._reasoner.complete(
+                system=identity.system_preamble(),
+                prompt=self._prompt(state, tempo, goal, memories),
+                max_tokens=600,
+            )
+        except Exception as exc:  # a failing model must not crash the loop
+            return Decision(
+                move=Move.THINK,
+                rationale=f"reasoner unavailable ({exc}); deliberating quietly",
+            )
         decision = self._parse(raw, goal, tempo)
         return decision
 
