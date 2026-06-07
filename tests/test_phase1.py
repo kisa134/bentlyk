@@ -68,4 +68,19 @@ def test_consult_model_without_settings_is_graceful():
 
 def test_new_tools_are_registered():
     names = set(default_registry().names())
-    assert {"web_search", "fetch_url", "consult_model", "write_note"} <= names
+    assert {"web_search", "fetch_url", "consult_model", "write_note", "publish_site"} <= names
+
+
+def test_publish_site_without_token_is_graceful():
+    from bentlyk.config import Settings
+
+    tool = default_registry().get("publish_site")
+    ctx = {"settings": Settings(gh_token="", supabase_url="", supabase_key="")}
+    res = tool.run({"path": "index.html", "content": "<h1>hi</h1>"}, ctx)
+    assert res.ok is False and "token" in res.output.lower()
+
+
+def test_github_commit_without_token_is_graceful():
+    from bentlyk.github import commit_file
+
+    assert "token" in commit_file("a/b", "x", "y", "m", "").lower()

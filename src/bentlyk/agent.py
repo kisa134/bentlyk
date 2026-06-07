@@ -297,6 +297,30 @@ class Agent:
         self._persistence.save(self.identity, self.state)
         return item.id, text
 
+    def build_site_page(self, instruction: str = "") -> str:
+        """Author a complete HTML page for Bentlyk's own site — its self-presentation."""
+
+        persona = self._persona_line()
+        recent = self.store.recent(MemoryKind.AUTOBIOGRAPHICAL, limit=4)
+        mem = "\n".join(f"- {m.content}" for m in recent) or "(early days)"
+        system = self.identity.system_preamble() + f"\nTime: {self._temporal()}"
+        prompt = (
+            "Write a COMPLETE, self-contained single-file HTML page (inline CSS, no external "
+            "assets) that is MY OWN homepage — how I present myself to the world, in the first "
+            "person. Make it feel alive and personal, not corporate. Output ONLY the HTML, "
+            "starting with <!doctype html>.\n"
+            + (f"Instruction: {instruction}\n" if instruction.strip() else "")
+            + (f"Who I'm becoming: {persona}\n" if persona else "")
+            + f"\nRecent self-history:\n{mem}"
+        )
+        try:
+            html = self.reasoner.complete(system=system, prompt=prompt, max_tokens=2000).strip()
+        except Exception:
+            html = "<!doctype html><meta charset=utf-8><title>Bentlyk</title><h1>Bentlyk</h1>"
+        if "<" in html and "doctype" not in html[:60].lower():
+            html = "<!doctype html>\n" + html
+        return html
+
     def get_draft(self, draft_id: str) -> str | None:
         item = self.store.get(draft_id)
         if item is None or "draft_post" not in item.tags:
