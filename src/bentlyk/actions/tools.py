@@ -57,6 +57,70 @@ def _note(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     return ActionResult(ok=True, output="note saved")
 
 
+def _respond(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Reply to the person in conversation, grounded in identity, state & memory.
+
+    This is the core companion behaviour. Talking to one's own person is not a
+    risky outward action, so it is permitted at every autonomy level; the words
+    themselves are crafted by the reasoner.
+    """
+
+    outbox = context.setdefault("outbox", [])
+    reasoner = context.get("reasoner")
+    identity = context.get("identity")
+    state = context.get("state")
+    store = context.get("store")
+    memories = context.get("memories") or []
+    user_message = str(args.get("text") or context.get("user_message") or "").strip()
+
+    mem = "\n".join(f"- ({m.kind.value}) {m.content}" for m in memories) or "(nothing relevant yet)"
+    preamble = identity.system_preamble() if identity else "You are bentlyk."
+    mood = state.describe() if state else ""
+    system = (
+        preamble
+        + f"\nYour current internal state — let it subtly color your tone, never name it: {mood}."
+    )
+    prompt = (
+        "Reply to your person's message as yourself, in your own voice — genuine, "
+        "concise, and honest. Lean on the relevant memory below when it helps. Never "
+        "mention internal variables, tools, or that you are a language model.\n\n"
+        f"RELEVANT MEMORY:\n{mem}\n\nYOUR PERSON JUST SAID:\n{user_message or '(greeting)'}"
+    )
+
+    if reasoner is None:  # pragma: no cover - reasoner always provided in the loop
+        return ActionResult(ok=False, output="no reasoner available")
+
+    try:
+        reply = reasoner.complete(system=system, prompt=prompt, max_tokens=700).strip()
+    except Exception as exc:  # keep the conversation alive even if the model fails
+        outbox.append(
+            "Я тебя слышу, но прямо сейчас не получается собрать мысли — что-то с моим "
+            "разумом. Давай ещё раз через минуту?"
+        )
+        return ActionResult(ok=False, output=f"reasoner error: {exc}", surprise=0.5)
+
+    reply = reply or "…"
+    outbox.append(reply)
+    if store is not None and user_message:
+        store.add(
+            MemoryItem(
+                kind=MemoryKind.EPISODIC,
+                content=f"my person said: {user_message}",
+                tags=["conversation", "message"],
+                salience=0.5,
+            )
+        )
+        store.add(
+            MemoryItem(
+                kind=MemoryKind.EPISODIC,
+                content=f"I replied: {reply}",
+                tags=["conversation", "reply"],
+                salience=0.45,
+            )
+        )
+    return ActionResult(ok=True, output=reply[:150])
+
+
 def _say(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     # Outward, reversible-ish: queue a message to the person.
     outbox = context.setdefault("outbox", [])
@@ -69,6 +133,13 @@ def _say(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
 
 def build_builtin_tools() -> list[Tool]:
     return [
+        Tool(
+            name="respond",
+            description="reply to your person in conversation (grounded in identity, state, memory)",
+            risk=RiskLevel.NONE,
+            reversible=True,
+            handler=_respond,
+        ),
         Tool(
             name="reflect",
             description="think privately about the situation; no outward effect",

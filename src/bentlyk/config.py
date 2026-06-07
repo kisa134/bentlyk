@@ -13,6 +13,10 @@ from pathlib import Path
 
 from .actions.permissions import AutonomyMode
 
+# Default chat models per provider. OpenRouter slugs differ from native ones.
+_OPENROUTER_DEFAULT = "anthropic/claude-3.5-sonnet"
+_ANTHROPIC_DEFAULT = "claude-sonnet-4-6"
+
 
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
@@ -20,15 +24,18 @@ def _env(name: str, default: str = "") -> str:
 
 @dataclass(slots=True)
 class Settings:
-    # Reasoner
+    # Reasoner. Provider is inferred: OpenRouter (OpenAI-compatible) if its key is
+    # set, else native Anthropic, else the offline mock.
+    openrouter_api_key: str = ""
     anthropic_api_key: str = ""
-    model: str = "claude-sonnet-4-6"
-    reflection_model: str = "claude-opus-4-8"
+    llm_base_url: str = "https://openrouter.ai/api/v1"
+    model: str = _ANTHROPIC_DEFAULT
+    reflection_model: str = ""  # falls back to ``model`` when empty
 
     # Storage
     store: str = "sqlite"  # "sqlite" | "postgres"
     sqlite_path: Path = field(default_factory=lambda: Path("./bentlyk.db"))
-    pg_dsn: str = "postgresql://localhost:5432/bentlyk"
+    pg_dsn: str = ""
 
     # Behaviour
     max_autonomy: AutonomyMode = AutonomyMode.SUGGEST
@@ -39,18 +46,41 @@ class Settings:
     telegram_allowed_user_id: str = ""
 
     @property
+    def provider(self) -> str:
+        if self.openrouter_api_key:
+            return "openrouter"
+        if self.anthropic_api_key:
+            return "anthropic"
+        return "mock"
+
+    @property
     def llm_enabled(self) -> bool:
-        return bool(self.anthropic_api_key)
+        return self.provider != "mock"
+
+    @property
+    def effective_reflection_model(self) -> str:
+        return self.reflection_model or self.model
 
     @classmethod
     def from_env(cls) -> "Settings":
+        openrouter = _env("OPENROUTER_API_KEY")
+        anthropic = _env("ANTHROPIC_API_KEY")
+        explicit_model = _env("BENTLYK_MODEL")
+        if explicit_model:
+            model = explicit_model
+        elif openrouter:
+            model = _OPENROUTER_DEFAULT
+        else:
+            model = _ANTHROPIC_DEFAULT
         return cls(
-            anthropic_api_key=_env("ANTHROPIC_API_KEY"),
-            model=_env("BENTLYK_MODEL") or "claude-sonnet-4-6",
-            reflection_model=_env("BENTLYK_REFLECTION_MODEL") or "claude-opus-4-8",
-            store=_env("BENTLYK_STORE") or "sqlite",
+            openrouter_api_key=openrouter,
+            anthropic_api_key=anthropic,
+            llm_base_url=_env("BENTLYK_LLM_BASE_URL") or "https://openrouter.ai/api/v1",
+            model=model,
+            reflection_model=_env("BENTLYK_REFLECTION_MODEL"),
+            store=_env("BENTLYK_STORE") or ("postgres" if _env("BENTLYK_PG_DSN") else "sqlite"),
             sqlite_path=Path(_env("BENTLYK_SQLITE_PATH") or "./bentlyk.db"),
-            pg_dsn=_env("BENTLYK_PG_DSN") or "postgresql://localhost:5432/bentlyk",
+            pg_dsn=_env("BENTLYK_PG_DSN"),
             max_autonomy=AutonomyMode.from_str(_env("BENTLYK_MAX_AUTONOMY") or "suggest"),
             identity=_env("BENTLYK_IDENTITY") or "default",
             telegram_bot_token=_env("TELEGRAM_BOT_TOKEN"),

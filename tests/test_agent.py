@@ -1,4 +1,4 @@
-from bentlyk.actions.permissions import AutonomyMode
+from bentlyk.actions.permissions import AutonomyMode, GateDecision
 from bentlyk.agent import Agent
 from bentlyk.config import Settings
 from bentlyk.events import message, timer
@@ -17,7 +17,21 @@ def test_tick_on_message_produces_a_cycle_and_records_episode():
     assert cycle.goal is not None
     assert cycle.decision is not None
     episodes = agent.store.all(MemoryKind.EPISODIC)
-    assert len(episodes) == 1
+    assert len(episodes) >= 1
+
+
+def test_message_gets_a_conversational_reply():
+    # A direct message is answered via the `respond` tool at any autonomy level,
+    # even OBSERVE — talking to one's person is risk-free.
+    agent = make_agent(max_autonomy=AutonomyMode.OBSERVE)
+    cycle = agent.tick(message("hey bentlyk, you there?"))
+    assert cycle.decision is not None and cycle.decision.move == Move.ACT
+    assert cycle.decision.tool == "respond"
+    assert cycle.gate == GateDecision.ALLOW
+    assert cycle.outbox  # something was said back
+    # The exchange is remembered for continuity.
+    convo = [m for m in agent.store.all(MemoryKind.EPISODIC) if "conversation" in m.tags]
+    assert convo
 
 
 def test_suggest_ceiling_blocks_outward_action():

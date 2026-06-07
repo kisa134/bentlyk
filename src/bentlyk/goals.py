@@ -41,8 +41,13 @@ class GoalCandidate:
     curiosity: float = 0.3
     risk: float = 0.2
     uncertainty: float = 0.3
+    conversational: bool = False  # a direct reply to the person is owed
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
     created_at: float = field(default_factory=time.time)
+
+    @property
+    def is_conversational(self) -> bool:
+        return self.conversational
 
     @property
     def score(self) -> float:
@@ -95,6 +100,7 @@ class GoalEngine:
                     curiosity=0.2,
                     risk=0.1,
                     uncertainty=0.2,
+                    conversational=True,
                 )
             ]
         if event.kind in (EventKind.FEED, EventKind.WEBHOOK, EventKind.FILE):

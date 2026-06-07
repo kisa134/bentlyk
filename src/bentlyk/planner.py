@@ -58,17 +58,29 @@ class Planner:
         memories: list[MemoryItem],
     ) -> Decision:
         # Hard homeostatic overrides come first — these are not the model's call.
-        if tempo.should_rest:
-            return Decision(
-                move=Move.THINK,
-                rationale="energy low: resting and consolidating instead of acting",
-                plan=["lower exertion", "let reflection consolidate later"],
-            )
         if tempo.should_ask and goal.uncertainty > 0.4:
             return Decision(
                 move=Move.ASK,
                 rationale="distrust/surprise high and goal is uncertain: ask the person",
                 message=self._clarifying_question(goal),
+            )
+
+        # A direct message from the person is answered conversationally. Replying
+        # to one's own person is the baseline behaviour, so it bypasses the rest
+        # override (the reply itself can acknowledge low energy) and is gated as a
+        # risk-free action.
+        if goal.is_conversational:
+            return Decision(
+                move=Move.ACT,
+                tool="respond",
+                rationale="reply to my person",
+            )
+
+        if tempo.should_rest:
+            return Decision(
+                move=Move.THINK,
+                rationale="energy low: resting and consolidating instead of acting",
+                plan=["lower exertion", "let reflection consolidate later"],
             )
 
         raw = self._reasoner.complete(

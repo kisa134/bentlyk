@@ -67,19 +67,29 @@ agent.sleep()             # run a reflection/consolidation pass
 Everything is a swappable seam; none of these touch the core loop:
 
 ```bash
-# Real Claude reasoner
+# Real reasoner via OpenRouter (any model, no SDK — talks over urllib)
+export OPENROUTER_API_KEY=sk-or-...
+export BENTLYK_MODEL=anthropic/claude-3.5-sonnet   # or any OpenRouter slug
+bentlyk chat
+
+# ...or native Claude
 pip install -e ".[llm]"
-export ANTHROPIC_API_KEY=sk-...        # Sonnet for the loop, Opus for reflection
+export ANTHROPIC_API_KEY=sk-ant-...
 
-# Postgres + pgvector memory (see docs/postgres_schema.sql)
+# Postgres memory + persisted self-model (Supabase)
 pip install -e ".[postgres]"
-export BENTLYK_STORE=postgres BENTLYK_PG_DSN=postgresql://localhost/bentlyk
-
-# Telegram interface
-pip install -e ".[telegram]"
-export TELEGRAM_BOT_TOKEN=... TELEGRAM_ALLOWED_USER_ID=...
-python -m bentlyk.interfaces.telegram
+export BENTLYK_PG_DSN=postgresql://...   # auto-selects the postgres store
 ```
+
+When a human message arrives, Bentlyk answers conversationally via the `respond`
+path — grounded in its identity, current internal state, and recalled memory —
+which is permitted at every autonomy level (talking to your person is risk-free).
+
+### Telegram bot on Vercel
+
+A full serverless deployment (Vercel functions + Supabase + Telegram webhook)
+lives in [`api/`](api) and [`vercel.json`](vercel.json). Step-by-step guide:
+**[docs/deploy.md](docs/deploy.md)**.
 
 Copy [`.env.example`](.env.example) to `.env` and fill in what you need. Identity
 profiles live in [`config/`](config) (`BENTLYK_IDENTITY=<name>`).

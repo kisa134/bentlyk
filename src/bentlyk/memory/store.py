@@ -199,10 +199,10 @@ def _row_to_item(row: sqlite3.Row) -> MemoryItem:
 def open_store(store: str, *, sqlite_path: str | Path = ":memory:", pg_dsn: str = "") -> MemoryStore:
     if store == "sqlite":
         return SqliteMemoryStore(sqlite_path)
-    if store == "postgres":  # pragma: no cover - optional path
-        raise NotImplementedError(
-            "Postgres+pgvector store is documented in docs/architecture.md; "
-            "install the 'postgres' extra and implement PgMemoryStore behind the "
-            "MemoryStore protocol."
-        )
+    if store == "postgres":  # pragma: no cover - needs a live database
+        from ..pg import PgMemoryStore
+
+        if not pg_dsn:
+            raise ValueError("BENTLYK_PG_DSN is required for the postgres store")
+        return PgMemoryStore(pg_dsn)
     raise ValueError(f"unknown store backend: {store!r}")

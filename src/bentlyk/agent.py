@@ -69,7 +69,7 @@ class Agent:
         self.store = store or open_store(
             self.settings.store, sqlite_path=self.settings.sqlite_path, pg_dsn=self.settings.pg_dsn
         )
-        self._persistence = StatePersistence.beside(self.settings.sqlite_path)
+        self._persistence = self._open_persistence()
 
         saved_identity, saved_state = self._persistence.load()
         # Precedence: explicit arg > persisted > named profile > built-in default.
@@ -81,19 +81,20 @@ class Agent:
         self.homeostasis = HomeostasisEngine()
         self.goals = GoalEngine(self.store)
         self.registry: ToolRegistry = default_registry()
-        reasoner = build_reasoner(api_key=self.settings.anthropic_api_key, model=self.settings.model)
-        self.planner = Planner(reasoner, self.registry)
+        self.reasoner = build_reasoner(self.settings)
+        self.planner = Planner(self.reasoner, self.registry)
         reflection_reasoner = build_reasoner(
-            api_key=self.settings.anthropic_api_key, model=self.settings.reflection_model
+            self.settings, model=self.settings.effective_reflection_model
         )
         self.reflection = ReflectionEngine(self.store, reflection_reasoner)
 
-        self._ticks = 0
+        self._ticks = self.state.tick_count
 
     # --- the loop -------------------------------------------------------------
     def tick(self, raw_event: object) -> CycleResult:
         event = normalize(raw_event)
-        self._ticks += 1
+        self.state.tick_count += 1
+        self._ticks = self.state.tick_count
 
         # 1-2. Perceive + update internal state.
         self.homeostasis.ingest(self.state, event)
@@ -136,7 +137,7 @@ class Agent:
             self.homeostasis.settle(self.state, success=True)
 
         else:  # Move.ACT
-            gate_decision, result = self._gated_act(decision, outbox)
+            gate_decision, result = self._gated_act(decision, outbox, event, memories)
             success = bool(result and result.ok) and gate_decision == GateDecision.ALLOW
             surprise = result.surprise if result else 0.2
             self._record_episode(
@@ -155,6 +156,13 @@ class Agent:
 
         return self._finish(cycle)
 
+    def _open_persistence(self):
+        if self.settings.store == "postgres":  # pragma: no cover - needs a live database
+            from .pg import PgStatePersistence
+
+            return PgStatePersistence(self.settings.pg_dsn)
+        return StatePersistence.beside(self.settings.sqlite_path)
+
     def sleep(self) -> Reflection:
         """Run a reflection/consolidation pass on demand."""
 
@@ -164,7 +172,11 @@ class Agent:
 
     # --- helpers --------------------------------------------------------------
     def _gated_act(
-        self, decision: Decision, outbox: list[str]
+        self,
+        decision: Decision,
+        outbox: list[str],
+        event: Event,
+        memories: list[MemoryItem],
     ) -> tuple[GateDecision, ActionResult | None]:
         tool = self.registry.get(decision.tool or "")
         if tool is None:
@@ -175,7 +187,16 @@ class Agent:
         )
 
         if gate.decision == GateDecision.ALLOW:
-            context = {"store": self.store, "state": self.state, "outbox": outbox}
+            context = {
+                "store": self.store,
+                "state": self.state,
+                "outbox": outbox,
+                # Conversational context for the `respond` tool.
+                "identity": self.identity,
+                "reasoner": self.reasoner,
+                "memories": memories,
+                "user_message": event.content,
+            }
             result = tool.run(decision.tool_args, context)
             return gate.decision, result
 

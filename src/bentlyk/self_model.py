@@ -112,6 +112,7 @@ class DynamicState:
     autonomy: AutonomyMode = AutonomyMode.SUGGEST
     recent_successes: int = 0
     recent_failures: int = 0
+    tick_count: int = 0  # lifetime cycles; persisted so reflection cadence survives restarts
     updated_at: float = field(default_factory=time.time)
 
     def signals(self) -> dict[str, float]:
