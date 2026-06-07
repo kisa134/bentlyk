@@ -40,7 +40,7 @@ class handler(BaseHTTPRequestHandler):
             payload["secret_token"] = webhook_secret
         result = tg_call(token, "setWebhook", payload)
 
-        schema_ok = self._ensure_schema()
+        schema_ok, db_error = self._ensure_schema()
 
         return self._json(
             200,
@@ -49,20 +49,22 @@ class handler(BaseHTTPRequestHandler):
                 "webhook_url": webhook_url,
                 "telegram": result,
                 "schema_initialized": schema_ok,
+                "db_dsn_present": bool(os.environ.get("BENTLYK_PG_DSN", "").strip()),
+                "db_error": db_error,
             },
         )
 
-    def _ensure_schema(self) -> bool:
+    def _ensure_schema(self) -> tuple[bool, str | None]:
         dsn = os.environ.get("BENTLYK_PG_DSN", "").strip()
         if not dsn:
-            return False
+            return False, "BENTLYK_PG_DSN is empty"
         try:
             from bentlyk.pg import ensure_schema
 
             ensure_schema(dsn)
-            return True
-        except Exception:  # pragma: no cover - best effort
-            return False
+            return True, None
+        except Exception as exc:  # surfaced (behind SETUP_SECRET) to diagnose connectivity
+            return False, f"{type(exc).__name__}: {exc}"
 
     def _json(self, code: int, body: dict) -> None:
         self.send_response(code)
