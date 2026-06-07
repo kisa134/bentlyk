@@ -1,30 +1,19 @@
-"""Shared bootstrap for the Vercel serverless functions.
+"""Serverless helpers (Telegram client, owner gate) for the Vercel functions.
 
-Each Vercel function is stateless and short-lived, so Bentlyk's continuity lives
-entirely in Postgres (Supabase): on every request we rebuild the Agent, which
-loads its self-model and memory from the database, processes one event, and
-persists again.
-
-This module also holds the tiny Telegram HTTP client (urllib, no SDK) and the
-owner-claim logic that keeps the bot private to one person.
+Lives inside the package so the api/ functions import it normally once ``bentlyk``
+is installed in the deployment — no sys.path juggling. The Telegram client is
+plain ``urllib`` (no SDK) to keep cold starts light.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import sys
 import urllib.error
 import urllib.request
 
-# Make the src-layout package importable from within the api/ functions.
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_SRC = os.path.join(_ROOT, "src")
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
-
-from bentlyk import Agent, message, timer  # noqa: E402
-from bentlyk.memory import MemoryItem, MemoryKind  # noqa: E402
+from .agent import Agent
+from .memory import MemoryItem, MemoryKind
 
 TELEGRAM_API = "https://api.telegram.org"
 
@@ -78,8 +67,8 @@ def owner_id(agent: Agent) -> str | None:
 def check_or_claim_owner(agent: Agent, user_id: str) -> bool:
     """Return True if this user may talk to Bentlyk.
 
-    Priority: an explicit TELEGRAM_ALLOWED_USER_ID env always wins. Otherwise the
-    first person to message claims ownership and is remembered; everyone else is
+    An explicit TELEGRAM_ALLOWED_USER_ID env always wins. Otherwise the first
+    person to message claims ownership and is remembered; everyone else is
     politely refused.
     """
 
@@ -99,15 +88,3 @@ def check_or_claim_owner(agent: Agent, user_id: str) -> bool:
         )
         return True
     return current == str(user_id)
-
-
-__all__ = [
-    "Agent",
-    "build_agent",
-    "message",
-    "timer",
-    "tg_call",
-    "tg_send",
-    "check_or_claim_owner",
-    "owner_id",
-]

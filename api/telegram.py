@@ -9,9 +9,14 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from http.server import BaseHTTPRequestHandler
 
-from _app import build_agent, check_or_claim_owner, message, tg_send
+# Make the package importable whether it's pip-installed or bundled via includeFiles.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from bentlyk import message  # noqa: E402
+from bentlyk.serverless import build_agent, check_or_claim_owner, tg_send  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
@@ -56,7 +61,7 @@ class handler(BaseHTTPRequestHandler):
                 return self._ok()
 
             cycle = agent.tick(message(text, source="telegram"))
-            replies = cycle.outbox or [_fallback(cycle)]
+            replies = cycle.outbox or ["Я тут, думаю над этим. 🐾"]
             for reply in replies:
                 tg_send(token, chat_id, reply)
         finally:
@@ -72,8 +77,3 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.end_headers()
         self.wfile.write(body)
-
-
-def _fallback(cycle) -> str:
-    # The agent chose not to speak (e.g. it deliberated). Surface a light cue.
-    return "Я тут, думаю над этим. 🐾"

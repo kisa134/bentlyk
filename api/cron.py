@@ -3,18 +3,18 @@
 Vercel Cron hits this endpoint on a schedule. Each call emits one idle ``timer``
 event (driving autonomous goal generation and homeostatic recovery); the agent's
 own cadence triggers a reflection/sleep pass periodically.
-
-On Vercel Hobby, cron runs at most daily — enough for a nightly consolidation.
-For minute-level "aliveness", upgrade the plan or point an external scheduler at
-this URL.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from http.server import BaseHTTPRequestHandler
 
-from _app import build_agent, timer
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from bentlyk import timer  # noqa: E402
+from bentlyk.serverless import build_agent  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
