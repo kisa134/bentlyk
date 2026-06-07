@@ -70,6 +70,49 @@ def ensure_schema(dsn: str) -> None:
         conn.close()
 
 
+def probe_pooler_hosts(dsn: str) -> list[dict]:
+    """Try the same credentials against candidate Supabase pooler hosts.
+
+    Brand-new projects don't always live on aws-0; this finds which pooler
+    cluster actually serves the tenant so we can hand back a working DSN.
+    Returns a list of {host, port, ok, error} dicts (stops at the first ok).
+    """
+
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(dsn)
+    user = parts.username or ""
+    pwd = parts.password or ""
+    dbname = (parts.path or "/postgres").lstrip("/") or "postgres"
+    regions = ["eu-central-1", "eu-west-1", "eu-west-2", "us-east-1", "us-west-1"]
+    clusters = ["aws-0", "aws-1"]
+    candidates = [
+        (f"{c}-{r}.pooler.supabase.com", 6543) for r in regions for c in clusters
+    ]
+    if parts.hostname:  # try the host already in the DSN first
+        candidates.insert(0, (parts.hostname, parts.port or 6543))
+
+    results: list[dict] = []
+    seen: set = set()
+    for host, port in candidates:
+        if (host, port) in seen:
+            continue
+        seen.add((host, port))
+        netloc = f"{user}:{pwd}@{host}:{port}"
+        cand = urlunsplit((parts.scheme, netloc, f"/{dbname}", "connect_timeout=5", ""))
+        try:
+            conn = _connect(cand)
+            conn.execute("SELECT 1")
+            conn.close()
+            results.append({"host": host, "port": port, "ok": True, "error": None})
+            break
+        except Exception as exc:
+            results.append(
+                {"host": host, "port": port, "ok": False, "error": f"{type(exc).__name__}: {str(exc)[:90]}"}
+            )
+    return results
+
+
 class PgMemoryStore:
     """MemoryStore over Postgres. One connection per instance."""
 

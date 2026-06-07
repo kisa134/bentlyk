@@ -42,6 +42,7 @@ class handler(BaseHTTPRequestHandler):
 
         schema_ok, db_error = self._ensure_schema()
         llm_ok, llm_model, llm_error = self._probe_llm()
+        host_probe = None if schema_ok else self._probe_hosts()
 
         return self._json(
             200,
@@ -52,11 +53,23 @@ class handler(BaseHTTPRequestHandler):
                 "schema_initialized": schema_ok,
                 "db_dsn_present": bool(os.environ.get("BENTLYK_PG_DSN", "").strip()),
                 "db_error": db_error,
+                "host_probe": host_probe,
                 "llm_ok": llm_ok,
                 "llm_model": llm_model,
                 "llm_error": llm_error,
             },
         )
+
+    def _probe_hosts(self):
+        dsn = os.environ.get("BENTLYK_PG_DSN", "").strip()
+        if not dsn:
+            return None
+        try:
+            from bentlyk.pg import probe_pooler_hosts
+
+            return probe_pooler_hosts(dsn)
+        except Exception as exc:  # pragma: no cover
+            return [{"error": f"{type(exc).__name__}: {exc}"}]
 
     def _probe_llm(self) -> tuple[bool, str, str | None]:
         try:
