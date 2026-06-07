@@ -49,17 +49,90 @@ _DECAY_PER_DAY = 0.03
 _PERMANENT = {MemoryKind.SEMANTIC, MemoryKind.PROCEDURAL, MemoryKind.AUTOBIOGRAPHICAL}
 
 
-def _connect(dsn: str):
-    try:
-        import psycopg  # type: ignore
-    except ImportError as exc:  # pragma: no cover - optional path
-        raise RuntimeError("psycopg not installed; `pip install bentlyk[postgres]`") from exc
-    conn = psycopg.connect(dsn, autocommit=True)
-    # Supabase's transaction-mode pooler (pgbouncer) doesn't support server-side
+_HOST_CACHE = "/tmp/bentlyk_pg_conninfo"  # warm-instance memo of the working DSN
+
+
+def _candidate_conninfos(dsn: str) -> list[str]:
+    """Given a Supabase DSN, produce it plus host/port variants to try.
+
+    Brand-new projects may live on a different pooler cluster (aws-0 vs aws-1)
+    than the templated host, so we auto-discover the one that actually serves the
+    tenant instead of making the user hunt for it in the dashboard.
+    """
+
+    import re
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(dsn)
+    host = parts.hostname or ""
+    user = parts.username or ""
+    pwd = parts.password or ""
+    db = (parts.path or "/postgres").lstrip("/") or "postgres"
+    pairs: list[tuple[str, int]] = [(host, parts.port or 6543)]
+    if ".pooler.supabase.com" in host:
+        for cluster in ("aws-0", "aws-1"):
+            base = re.sub(r"^aws-\d+", cluster, host)
+            for port in (6543, 5432):
+                pairs.append((base, port))
+
+    out: list[str] = []
+    seen: set = set()
+    for h, p in pairs:
+        if not h or (h, p) in seen:
+            continue
+        seen.add((h, p))
+        out.append(
+            urlunsplit((parts.scheme, f"{user}:{pwd}@{h}:{p}", f"/{db}", "connect_timeout=5", ""))
+        )
+    return out
+
+
+def _raw_connect(conninfo: str):
+    import psycopg  # type: ignore
+
+    conn = psycopg.connect(conninfo, autocommit=True)
+    # Supabase's transaction pooler (pgbouncer) doesn't support server-side
     # prepared statements; disable them to avoid "prepared statement already
     # exists" errors across pooled connections.
     conn.prepare_threshold = None
     return conn
+
+
+def _connect(dsn: str):
+    try:
+        import psycopg  # type: ignore  # noqa: F401
+    except ImportError as exc:  # pragma: no cover - optional path
+        raise RuntimeError("psycopg not installed; `pip install bentlyk[postgres]`") from exc
+
+    import os
+
+    # Try the conninfo that worked on a previous (warm) invocation first.
+    order: list[str] = []
+    try:
+        if os.path.exists(_HOST_CACHE):
+            with open(_HOST_CACHE) as fh:
+                cached = fh.read().strip()
+            if cached:
+                order.append(cached)
+    except OSError:
+        pass
+    for cand in _candidate_conninfos(dsn):
+        if cand not in order:
+            order.append(cand)
+
+    last_exc: Exception | None = None
+    for conninfo in order:
+        try:
+            conn = _raw_connect(conninfo)
+            try:
+                with open(_HOST_CACHE, "w") as fh:
+                    fh.write(conninfo)
+            except OSError:
+                pass
+            return conn
+        except Exception as exc:  # try the next candidate host/port
+            last_exc = exc
+    raise last_exc if last_exc else RuntimeError("no connection candidates")
 
 
 def ensure_schema(dsn: str) -> None:
