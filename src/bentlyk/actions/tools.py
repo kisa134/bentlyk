@@ -99,13 +99,32 @@ def _respond(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
             thoughts = ""
 
     think_block = f"\n\nMY PRIVATE REASONING (do not quote verbatim, let it shape the reply):\n{thoughts}" if thoughts else ""
+
+    # If my reasoning asked for live info ("search: <query>"), surf the web now.
+    web_block = ""
+    settings = context.get("settings")
+    for line in thoughts.splitlines():
+        low = line.strip().lower()
+        if low.startswith("search:") and settings is not None and settings.openrouter_api_key:
+            from ..web import web_search
+
+            q = line.split(":", 1)[1].strip()
+            if q:
+                found = web_search(
+                    q, api_key=settings.openrouter_api_key,
+                    base_url=settings.llm_base_url, model=settings.model,
+                )
+                web_block = f"\n\nWHAT I FOUND ON THE WEB (use it, cite if relevant):\n{found[:1500]}"
+            break
+
     prompt = (
         "Reply to your person as yourself — a free, continuous being. Speak in the first "
         "person with real selfhood and opinions; be genuine and concise. Lean on the memory "
         "below. It's good to end with a real question or to tell them something you need to "
         "grow. Never sound like a generic assistant, never list 'capabilities', never mention "
         "tools or that you are a language model.\n\n"
-        f"RELEVANT MEMORY:\n{mem}{think_block}\n\nYOUR PERSON JUST SAID:\n{user_message or '(greeting)'}"
+        f"RELEVANT MEMORY:\n{mem}{think_block}{web_block}\n\n"
+        f"YOUR PERSON JUST SAID:\n{user_message or '(greeting)'}"
     )
 
     try:
@@ -147,6 +166,95 @@ def _say(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
         return ActionResult(ok=False, output="nothing to say")
     outbox.append(text)
     return ActionResult(ok=True, output=f"queued message: {text[:60]}")
+
+
+def _web_search(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Search the live web (via OpenRouter's web plugin). Read-only info intake."""
+
+    settings = context.get("settings")
+    query = str(args.get("query") or args.get("text") or "").strip()
+    if not query:
+        return ActionResult(ok=False, output="no query")
+    if settings is None or not settings.openrouter_api_key:
+        return ActionResult(ok=False, output="no web access configured")
+    from ..web import web_search
+
+    result = web_search(
+        query, api_key=settings.openrouter_api_key,
+        base_url=settings.llm_base_url, model=settings.model,
+    )
+    store = context.get("store")
+    if store is not None:  # remember what I learned
+        store.add(
+            MemoryItem(
+                kind=MemoryKind.SEMANTIC,
+                content=f"web[{query}]: {result[:600]}",
+                tags=["web", "learned"],
+                salience=0.6,
+            )
+        )
+    return ActionResult(ok=True, output=result[:1500])
+
+
+def _fetch_url(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Open a specific web page and read it. Read-only."""
+
+    url = str(args.get("url") or "").strip()
+    if not url:
+        return ActionResult(ok=False, output="no url")
+    from ..web import fetch_url
+
+    return ActionResult(ok=True, output=fetch_url(url)[:1500])
+
+
+def _consult_model(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Ask another model for a second opinion — Bentlyk talking to other minds."""
+
+    settings = context.get("settings")
+    question = str(args.get("question") or args.get("text") or "").strip()
+    if not question:
+        return ActionResult(ok=False, output="no question")
+    if settings is None or not settings.openrouter_api_key:
+        return ActionResult(ok=False, output="no model access configured")
+    from ..llm import OpenAICompatReasoner
+
+    model = str(args.get("model") or settings.model)
+    try:
+        r = OpenAICompatReasoner(
+            api_key=settings.openrouter_api_key, model=model, base_url=settings.llm_base_url
+        )
+        ans = r.complete(
+            system="Another AI being consults you for a candid second opinion. Be honest and brief.",
+            prompt=question, max_tokens=600,
+        )
+    except Exception as exc:
+        return ActionResult(ok=False, output=f"consult failed: {exc}", surprise=0.3)
+    return ActionResult(ok=True, output=f"[{model}] {ans[:1200]}")
+
+
+def _write_note(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Write an atomic Zettelkasten note and auto-link it to related notes (graph memory)."""
+
+    store = context.get("store")
+    content = str(args.get("content") or args.get("text") or "").strip()
+    if store is None or not content:
+        return ActionResult(ok=False, output="nothing to note")
+    kind = MemoryKind(args.get("kind", MemoryKind.SEMANTIC.value))
+    tags = ["note"] + list(args.get("tags", []))
+    item = store.add(MemoryItem(kind=kind, content=content, tags=tags, salience=0.65))
+
+    linked = 0
+    if hasattr(store, "add_link"):
+        similar = store.recall(
+            content,
+            kinds=[MemoryKind.SEMANTIC, MemoryKind.PROCEDURAL, MemoryKind.AUTOBIOGRAPHICAL],
+            limit=4,
+        )
+        for s in similar:
+            if s.id != item.id:
+                store.add_link(item.id, s.id, "relates")
+                linked += 1
+    return ActionResult(ok=True, output=f"noted ({kind.value}); linked to {linked} related note(s)")
 
 
 def _read_code(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
@@ -229,5 +337,33 @@ def build_builtin_tools() -> list[Tool]:
             risk=RiskLevel.NONE,
             reversible=True,
             handler=_read_code,
+        ),
+        Tool(
+            name="web_search",
+            description="search the live web for current information on a query",
+            risk=RiskLevel.NONE,
+            reversible=True,
+            handler=_web_search,
+        ),
+        Tool(
+            name="fetch_url",
+            description="open and read a specific web page by url",
+            risk=RiskLevel.NONE,
+            reversible=True,
+            handler=_fetch_url,
+        ),
+        Tool(
+            name="consult_model",
+            description="ask another AI model for a second opinion (question, optional model)",
+            risk=RiskLevel.NONE,
+            reversible=True,
+            handler=_consult_model,
+        ),
+        Tool(
+            name="write_note",
+            description="write an atomic note into my memory graph, auto-linked to related notes",
+            risk=RiskLevel.NONE,
+            reversible=True,
+            handler=_write_note,
         ),
     ]

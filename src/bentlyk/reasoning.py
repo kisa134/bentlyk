@@ -43,6 +43,8 @@ def deliberate(
         f"My person just said:\n{user_message}\n\n"
         "Output:\n- thoughts: 3-6 short bullet steps (your real reasoning)\n"
         "- stance: one line — what I actually think / want to say\n"
-        "- ask: one genuine question or thing I need to grow (optional)"
+        "- ask: one genuine question or thing I need to grow (optional)\n"
+        "- if you need current/external facts to answer well, add one line exactly: "
+        "'search: <query>'"
     )
     return reasoner.complete(system=system, prompt=prompt, max_tokens=max_tokens)
