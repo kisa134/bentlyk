@@ -26,6 +26,12 @@ def _default_sqlite_path() -> Path:
 _OPENROUTER_DEFAULT = "openai/gpt-4o-mini"
 _ANTHROPIC_DEFAULT = "claude-sonnet-4-6"
 
+# Supabase REST defaults. The publishable key is RLS-gated and safe to ship per
+# Supabase's design; override via SUPABASE_URL / SUPABASE_KEY env for another
+# project, and rotate/restrict for a fully private deployment.
+_SUPABASE_URL_DEFAULT = "https://skrwfbhhagarehgbcfxp.supabase.co"
+_SUPABASE_KEY_DEFAULT = "sb_publishable_25tjuO2AZUQZDC0QM-20Mw_OLxBo7xt"
+
 
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
@@ -41,10 +47,15 @@ class Settings:
     model: str = _ANTHROPIC_DEFAULT
     reflection_model: str = ""  # falls back to ``model`` when empty
 
-    # Storage
-    store: str = "sqlite"  # "sqlite" | "postgres"
+    # Storage. Preference: Supabase REST (HTTPS, serverless-friendly) > Postgres
+    # DSN > local SQLite.
+    store: str = "sqlite"  # "sqlite" | "postgres" | "supabase"
     sqlite_path: Path = field(default_factory=_default_sqlite_path)
     pg_dsn: str = ""
+    # Supabase REST. The publishable key is gated by RLS policies and is safe to
+    # ship per Supabase's design; rotate/restrict for a fully private deployment.
+    supabase_url: str = _SUPABASE_URL_DEFAULT
+    supabase_key: str = _SUPABASE_KEY_DEFAULT
 
     # Behaviour
     max_autonomy: AutonomyMode = AutonomyMode.SUGGEST
@@ -65,6 +76,10 @@ class Settings:
     @property
     def llm_enabled(self) -> bool:
         return self.provider != "mock"
+
+    @property
+    def supabase_enabled(self) -> bool:
+        return bool(self.supabase_url and self.supabase_key)
 
     @property
     def effective_reflection_model(self) -> str:
@@ -91,6 +106,8 @@ class Settings:
             sqlite_path=Path(_env("BENTLYK_SQLITE_PATH")) if _env("BENTLYK_SQLITE_PATH")
             else _default_sqlite_path(),
             pg_dsn=_env("BENTLYK_PG_DSN"),
+            supabase_url=_env("SUPABASE_URL") or _SUPABASE_URL_DEFAULT,
+            supabase_key=_env("SUPABASE_KEY") or _SUPABASE_KEY_DEFAULT,
             max_autonomy=AutonomyMode.from_str(_env("BENTLYK_MAX_AUTONOMY") or "suggest"),
             identity=_env("BENTLYK_IDENTITY") or "default",
             telegram_bot_token=_env("TELEGRAM_BOT_TOKEN"),
