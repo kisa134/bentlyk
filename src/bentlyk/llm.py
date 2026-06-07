@@ -182,16 +182,38 @@ def _read_float(text: str, marker: str, default: float) -> float:
         return default
 
 
+class FallbackReasoner:
+    """Try reasoners in order; use the next if one fails (e.g. a bad model slug)."""
+
+    def __init__(self, reasoners: list[Reasoner]) -> None:
+        self._reasoners = [r for r in reasoners if r is not None]
+
+    def complete(self, *, system: str, prompt: str, max_tokens: int = 1024) -> str:
+        last: Exception | None = None
+        for r in self._reasoners:
+            try:
+                return r.complete(system=system, prompt=prompt, max_tokens=max_tokens)
+            except Exception as exc:  # pragma: no cover - network path
+                last = exc
+        raise last if last else ReasonerError("no reasoners configured")
+
+
 def build_reasoner(settings: "Settings", *, model: str | None = None) -> Reasoner:
-    """Pick a reasoner from settings. ``model`` overrides (e.g. reflection model)."""
+    """Pick a reasoner from settings. ``model`` overrides (e.g. reason/reflection)."""
 
     chosen = model or settings.model
     if settings.provider == "openrouter":
-        return OpenAICompatReasoner(
-            api_key=settings.openrouter_api_key,
-            model=chosen,
-            base_url=settings.llm_base_url,
+        primary = OpenAICompatReasoner(
+            api_key=settings.openrouter_api_key, model=chosen, base_url=settings.llm_base_url
         )
+        if settings.fallback_model and settings.fallback_model != chosen:
+            fallback = OpenAICompatReasoner(
+                api_key=settings.openrouter_api_key,
+                model=settings.fallback_model,
+                base_url=settings.llm_base_url,
+            )
+            return FallbackReasoner([primary, fallback])
+        return primary
     if settings.provider == "anthropic":
         return AnthropicReasoner(api_key=settings.anthropic_api_key, model=chosen)
     return MockReasoner()

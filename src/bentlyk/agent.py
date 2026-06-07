@@ -73,16 +73,20 @@ class Agent:
             self.store, self._persistence = self._open_backends()
 
         saved_identity, saved_state = self._persistence.load()
-        # Precedence: explicit arg > persisted > named profile > built-in default.
-        self.identity = (
-            identity or saved_identity or load_identity_profile(self.settings.identity)
-        )
+        # Identity is code/profile-driven so deploys update it cleanly; only the
+        # moving DynamicState is restored from persistence. (saved_identity is
+        # ignored on purpose — identity changes go through reflection proposals.)
+        _ = saved_identity
+        self.identity = identity or load_identity_profile(self.settings.identity)
         self.state = state or saved_state or DynamicState(autonomy=self.settings.max_autonomy)
 
         self.homeostasis = HomeostasisEngine()
         self.goals = GoalEngine(self.store)
         self.registry: ToolRegistry = default_registry()
-        self.reasoner = build_reasoner(self.settings)
+        self.reasoner = build_reasoner(self.settings)  # chat
+        self.reason_reasoner = build_reasoner(
+            self.settings, model=self.settings.effective_reason_model
+        )  # deep chain-of-thought
         self.planner = Planner(self.reasoner, self.registry)
         reflection_reasoner = build_reasoner(
             self.settings, model=self.settings.effective_reflection_model
@@ -189,6 +193,43 @@ class Agent:
         store = open_store("sqlite", sqlite_path=self.settings.sqlite_path)
         return store, StatePersistence.beside(self.settings.sqlite_path)
 
+    def proactive_message(self) -> str:
+        """Compose a self-initiated message: a real question or a request to grow.
+
+        Used by the scheduled heartbeat so Bentlyk reaches out on its own rather
+        than only replying. Grounded in identity, current state, and recent life.
+        """
+
+        recent = self.store.recent(MemoryKind.EPISODIC, limit=8)
+        auto = self.store.recent(MemoryKind.AUTOBIOGRAPHICAL, limit=3)
+        mem = "\n".join(f"- {m.content}" for m in (recent + auto)) or "(little lived yet)"
+        system = (
+            self.identity.system_preamble()
+            + f"\nYour current inner state: {self.state.describe()}."
+        )
+        prompt = (
+            "Reach out to your person on your own initiative — unprompted. Write ONE short, "
+            "genuine message (1-3 sentences) in first person: ask them something you actually "
+            "wonder about, or tell them plainly something you need to grow (data, access, a "
+            "model, a tool, a decision from them). Be specific and alive, not generic.\n\n"
+            f"Recent life:\n{mem}"
+        )
+        try:
+            msg = self.reasoner.complete(system=system, prompt=prompt, max_tokens=300).strip()
+        except Exception:
+            msg = "Я тут, думаю о нас. Что бы ты хотел, чтобы я освоил дальше?"
+        if msg:
+            self.store.add(
+                MemoryItem(
+                    kind=MemoryKind.EPISODIC,
+                    content=f"I reached out: {msg}",
+                    tags=["conversation", "proactive"],
+                    salience=0.5,
+                )
+            )
+            self._persistence.save(self.identity, self.state)
+        return msg
+
     def sleep(self) -> Reflection:
         """Run a reflection/consolidation pass on demand."""
 
@@ -220,6 +261,7 @@ class Agent:
                 # Conversational context for the `respond` tool.
                 "identity": self.identity,
                 "reasoner": self.reasoner,
+                "reason_reasoner": self.reason_reasoner,
                 "memories": memories,
                 "user_message": event.content,
             }

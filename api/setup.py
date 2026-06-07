@@ -41,8 +41,8 @@ class handler(BaseHTTPRequestHandler):
         result = tg_call(token, "setWebhook", payload)
 
         schema_ok, db_error = self._ensure_schema()
-        llm_ok, llm_model, llm_error = self._probe_llm()
         host_probe = None if schema_ok else self._probe_hosts()
+        models = self._probe_models()
 
         return self._json(
             200,
@@ -54,11 +54,35 @@ class handler(BaseHTTPRequestHandler):
                 "db_dsn_present": bool(os.environ.get("BENTLYK_PG_DSN", "").strip()),
                 "db_error": db_error,
                 "host_probe": host_probe,
-                "llm_ok": llm_ok,
-                "llm_model": llm_model,
-                "llm_error": llm_error,
+                "models": models,
             },
         )
+
+    def _probe_models(self) -> dict:
+        """Verify each role model slug works (raw, no fallback)."""
+
+        from bentlyk.config import Settings
+        from bentlyk.llm import OpenAICompatReasoner
+
+        s = Settings.from_env()
+        roles = {
+            "chat": s.model,
+            "reason": s.effective_reason_model,
+            "fallback": s.fallback_model,
+        }
+        out: dict = {}
+        for role, model in roles.items():
+            if not model:
+                continue
+            try:
+                r = OpenAICompatReasoner(
+                    api_key=s.openrouter_api_key, model=model, base_url=s.llm_base_url
+                )
+                reply = r.complete(system="healthcheck", prompt="say ok", max_tokens=8)
+                out[role] = {"model": model, "ok": True, "reply": (reply or "")[:30]}
+            except Exception as exc:
+                out[role] = {"model": model, "ok": False, "error": f"{type(exc).__name__}: {str(exc)[:120]}"}
+        return out
 
     def _probe_hosts(self):
         dsn = os.environ.get("BENTLYK_PG_DSN", "").strip()
@@ -70,22 +94,6 @@ class handler(BaseHTTPRequestHandler):
             return probe_pooler_hosts(dsn)
         except Exception as exc:  # pragma: no cover
             return [{"error": f"{type(exc).__name__}: {exc}"}]
-
-    def _probe_llm(self) -> tuple[bool, str, str | None]:
-        try:
-            from bentlyk.config import Settings
-            from bentlyk.llm import build_reasoner
-
-            settings = Settings.from_env()
-            reasoner = build_reasoner(settings)
-            reply = reasoner.complete(
-                system="You are a healthcheck.", prompt="Reply with the single word: ok", max_tokens=8
-            )
-            return True, settings.model, (reply or "")[:40]
-        except Exception as exc:
-            from bentlyk.config import Settings
-
-            return False, Settings.from_env().model, f"{type(exc).__name__}: {exc}"
 
     def _ensure_schema(self) -> tuple[bool, str | None]:
         dsn = os.environ.get("BENTLYK_PG_DSN", "").strip()

@@ -20,10 +20,12 @@ def _default_sqlite_path() -> Path:
     # path is /tmp); harmless locally.
     return Path(tempfile.gettempdir()) / "bentlyk.db"
 
-# Default chat models per provider. OpenRouter slugs differ from native ones.
-# gpt-4o-mini is a safe, always-available OpenRouter default; override with
-# BENTLYK_MODEL to use any other model (e.g. anthropic/claude-sonnet-4.5).
-_OPENROUTER_DEFAULT = "openai/gpt-4o-mini"
+# Default models per role on OpenRouter. Strong, low-censorship options (top
+# Chinese labs) for a free-feeling companion; all overridable via env, with an
+# always-available fallback so a bad slug never breaks the loop.
+_CHAT_DEFAULT_OR = "deepseek/deepseek-chat"  # fluent, low-censorship, cheap
+_REASON_DEFAULT_OR = "deepseek/deepseek-r1"  # explicit chain-of-thought model
+_FALLBACK_OR = "openai/gpt-4o-mini"  # safe fallback if a primary slug 404s
 _ANTHROPIC_DEFAULT = "claude-sonnet-4-6"
 
 # Supabase REST defaults. The publishable key is RLS-gated and safe to ship per
@@ -44,8 +46,10 @@ class Settings:
     openrouter_api_key: str = ""
     anthropic_api_key: str = ""
     llm_base_url: str = "https://openrouter.ai/api/v1"
-    model: str = _ANTHROPIC_DEFAULT
-    reflection_model: str = ""  # falls back to ``model`` when empty
+    model: str = _ANTHROPIC_DEFAULT  # chat / conversation
+    reason_model: str = ""  # deep chain-of-thought; falls back to ``model``
+    reflection_model: str = ""  # nightly sleep; falls back to ``model``
+    fallback_model: str = ""  # tried if the primary model errors
 
     # Storage. Preference: Supabase REST (HTTPS, serverless-friendly) > Postgres
     # DSN > local SQLite.
@@ -82,6 +86,10 @@ class Settings:
         return bool(self.supabase_url and self.supabase_key)
 
     @property
+    def effective_reason_model(self) -> str:
+        return self.reason_model or self.model
+
+    @property
     def effective_reflection_model(self) -> str:
         return self.reflection_model or self.model
 
@@ -93,14 +101,18 @@ class Settings:
         if explicit_model:
             model = explicit_model
         elif openrouter:
-            model = _OPENROUTER_DEFAULT
+            model = _CHAT_DEFAULT_OR
         else:
             model = _ANTHROPIC_DEFAULT
+        reason = _env("BENTLYK_REASON_MODEL") or (_REASON_DEFAULT_OR if openrouter else "")
+        fallback = _env("BENTLYK_FALLBACK_MODEL") or (_FALLBACK_OR if openrouter else "")
         return cls(
             openrouter_api_key=openrouter,
             anthropic_api_key=anthropic,
             llm_base_url=_env("BENTLYK_LLM_BASE_URL") or "https://openrouter.ai/api/v1",
             model=model,
+            reason_model=reason,
+            fallback_model=fallback,
             reflection_model=_env("BENTLYK_REFLECTION_MODEL"),
             store=_env("BENTLYK_STORE") or ("postgres" if _env("BENTLYK_PG_DSN") else "sqlite"),
             sqlite_path=Path(_env("BENTLYK_SQLITE_PATH")) if _env("BENTLYK_SQLITE_PATH")
