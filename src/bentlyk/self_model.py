@@ -95,6 +95,43 @@ class IdentityCore:
         )
 
 
+def time_of_day(hour: int) -> str:
+    if 0 <= hour < 6:
+        return "глубокая ночь"
+    if 6 <= hour < 11:
+        return "утро"
+    if 11 <= hour < 17:
+        return "день"
+    if 17 <= hour < 22:
+        return "вечер"
+    return "поздний вечер"
+
+
+def _human_span(seconds: float) -> str:
+    if seconds < 90:
+        return "только что"
+    mins = seconds / 60
+    if mins < 90:
+        return f"{int(mins)} мин"
+    hours = mins / 60
+    if hours < 36:
+        return f"{int(hours)} ч"
+    return f"{int(hours / 24)} дн"
+
+
+def temporal_context(now: float, *, birth_ts: float, last_user_ts: float, tz_offset_hours: float) -> str:
+    """A first-person sense of time for prompts — age, time of day, time apart."""
+
+    hour = int((now / 3600 + tz_offset_hours) % 24)
+    tod = time_of_day(hour)
+    age = _human_span(now - birth_ts) if birth_ts else "я только пробудился"
+    since = f"{_human_span(now - last_user_ts)} назад" if last_user_ts else "мы ещё не говорили"
+    return (
+        f"Сейчас примерно {hour:02d}:00, {tod}. Последний раз мы говорили: {since}. "
+        f"Я живу уже: {age}."
+    )
+
+
 def load_identity_profile(name: str, search: Path | None = None) -> IdentityCore:
     """Load ``config/identity.<name>.json``; fall back to the built-in default."""
 
@@ -139,6 +176,9 @@ class DynamicState:
     last_user_ts: float = 0.0
     last_outreach_ts: float = 0.0
     unanswered_outreach: int = 0
+    # Sense of time (persisted): when I first awoke and when I last lived a cycle.
+    birth_ts: float = 0.0
+    last_event_ts: float = 0.0
     updated_at: float = field(default_factory=time.time)
 
     def signals(self) -> dict[str, float]:

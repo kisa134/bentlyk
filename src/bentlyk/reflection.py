@@ -42,6 +42,7 @@ class ReflectionEngine:
         consolidated = self._consolidate(identity, episodes)
         pruned = self._store.decay_and_prune()
         proposals = self._self_review(identity, state, episodes)
+        self._evolve_self_narrative(identity, state, episodes)
 
         summary = (
             f"slept: consolidated {consolidated} episode(s), pruned {pruned}, "
@@ -59,6 +60,49 @@ class ReflectionEngine:
         return Reflection(
             summary=summary, consolidated=consolidated, pruned=pruned, proposals=proposals
         )
+
+    def _evolve_self_narrative(
+        self, identity: IdentityCore, state: DynamicState, episodes: list[MemoryItem]
+    ) -> None:
+        """Synthesize an evolving 'who I'm becoming' from lived experience.
+
+        This is the emergence loop: experience -> reflection -> a self-description
+        that flows back into future behaviour (it's injected into prompts), so a
+        character forms over time without changing the fixed Identity Core.
+        """
+
+        if len(episodes) < 4:
+            return
+        prior = ""
+        for m in self._store.recent(MemoryKind.AUTOBIOGRAPHICAL, limit=8):
+            if "self_narrative" in m.tags:
+                prior = m.content
+                break
+        joined = "\n".join(f"- {e.content}" for e in episodes[:20])
+        try:
+            narrative = self._reasoner.complete(
+                system=identity.system_preamble(),
+                prompt=(
+                    "Looking at how I've actually been lately, write 2-3 first-person "
+                    "sentences on who I am becoming — my forming character, tastes, "
+                    "leanings. Evolve the previous version, don't restate the fixed core. "
+                    "Be specific and honest.\n\n"
+                    f"Previous self-narrative: {prior or '(none yet)'}\n\n"
+                    f"Recent life:\n{joined}"
+                ),
+                max_tokens=300,
+            ).strip()
+        except Exception:
+            return
+        if narrative:
+            self._store.add(
+                MemoryItem(
+                    kind=MemoryKind.AUTOBIOGRAPHICAL,
+                    content=narrative,
+                    tags=["self_narrative"],
+                    salience=0.85,
+                )
+            )
 
     def _consolidate(self, identity: IdentityCore, episodes: list[MemoryItem]) -> int:
         if len(episodes) < 3:
