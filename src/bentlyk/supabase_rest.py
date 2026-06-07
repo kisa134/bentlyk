@@ -75,6 +75,35 @@ class SupabaseRest:
 
     def forget(self, item_id: str) -> None:
         self._req("DELETE", "/memory", params={"id": f"eq.{item_id}"}, prefer="return=minimal")
+        self._req(
+            "DELETE", "/memory_links",
+            params={"or": f"(src_id.eq.{item_id},dst_id.eq.{item_id})"}, prefer="return=minimal",
+        )
+
+    # --- graph (Zettelkasten) -------------------------------------------------
+    def add_link(self, src_id: str, dst_id: str, relation: str = "relates") -> None:
+        if src_id == dst_id:
+            return
+        self._req(
+            "POST", "/memory_links", params={"on_conflict": "src_id,dst_id,relation"},
+            body=[{"src_id": src_id, "dst_id": dst_id, "relation": relation, "created_at": time.time()}],
+            prefer="resolution=merge-duplicates,return=minimal",
+        )
+
+    def neighbors(self, item_ids: list[str], limit: int = 6) -> list[MemoryItem]:
+        if not item_ids:
+            return []
+        idlist = "(" + ",".join(item_ids) + ")"
+        rows = self._req("GET", "/memory_links", params={
+            "or": f"(src_id.in.{idlist},dst_id.in.{idlist})", "select": "src_id,dst_id",
+        })
+        others: list[str] = []
+        for r in rows:
+            for side in (r.get("src_id"), r.get("dst_id")):
+                if side and side not in item_ids and side not in others:
+                    others.append(side)
+        out = [self.get(i) for i in others[:limit]]
+        return [m for m in out if m is not None]
 
     # --- reads ----------------------------------------------------------------
     def get(self, item_id: str) -> MemoryItem | None:

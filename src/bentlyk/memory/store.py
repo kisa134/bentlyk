@@ -47,6 +47,16 @@ CREATE TABLE IF NOT EXISTS memory (
 );
 CREATE INDEX IF NOT EXISTS idx_memory_kind ON memory(kind);
 CREATE INDEX IF NOT EXISTS idx_memory_created ON memory(created_at);
+
+CREATE TABLE IF NOT EXISTS memory_links (
+    src_id TEXT NOT NULL,
+    dst_id TEXT NOT NULL,
+    relation TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (src_id, dst_id, relation)
+);
+CREATE INDEX IF NOT EXISTS idx_links_src ON memory_links(src_id);
+CREATE INDEX IF NOT EXISTS idx_links_dst ON memory_links(dst_id);
 """
 
 # Below this effective salience, short-term/episodic memories are pruned.
@@ -90,7 +100,33 @@ class SqliteMemoryStore:
 
     def forget(self, item_id: str) -> None:
         self._conn.execute("DELETE FROM memory WHERE id = ?", (item_id,))
+        self._conn.execute(
+            "DELETE FROM memory_links WHERE src_id = ? OR dst_id = ?", (item_id, item_id)
+        )
         self._conn.commit()
+
+    # --- graph (Zettelkasten) -------------------------------------------------
+    def add_link(self, src_id: str, dst_id: str, relation: str = "relates") -> None:
+        if src_id == dst_id:
+            return
+        self._conn.execute(
+            "INSERT OR IGNORE INTO memory_links VALUES (?,?,?,?)",
+            (src_id, dst_id, relation, time.time()),
+        )
+        self._conn.commit()
+
+    def neighbors(self, item_ids: list[str], limit: int = 6) -> list[MemoryItem]:
+        if not item_ids:
+            return []
+        marks = ",".join("?" * len(item_ids))
+        rows = self._conn.execute(
+            f"SELECT dst_id AS other FROM memory_links WHERE src_id IN ({marks}) "
+            f"UNION SELECT src_id AS other FROM memory_links WHERE dst_id IN ({marks})",
+            (*item_ids, *item_ids),
+        ).fetchall()
+        ids = [r["other"] for r in rows if r["other"] not in item_ids][:limit]
+        out = [self.get(i) for i in ids]
+        return [m for m in out if m is not None]
 
     # --- reads ----------------------------------------------------------------
     def get(self, item_id: str) -> MemoryItem | None:

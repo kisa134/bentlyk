@@ -112,8 +112,14 @@ class Agent:
         self.homeostasis.ingest(self.state, event)
         tempo = self.homeostasis.tempo(self.state)
 
-        # 3. Retrieve relevant memory.
+        # 3. Retrieve relevant memory, expanded along the memory graph (associative).
         memories = self.store.recall(event.content or event.kind.value, limit=6)
+        if hasattr(self.store, "neighbors") and memories:
+            seen = {m.id for m in memories}
+            for n in self.store.neighbors([m.id for m in memories], limit=4):
+                if n.id not in seen:
+                    memories.append(n)
+                    seen.add(n.id)
 
         # 4-5. Generate and select a goal; cap autonomy by the configured ceiling.
         candidates = self.goals.generate(event=event, state=self.state)
@@ -301,6 +307,7 @@ class Agent:
                 "reason_reasoner": self.reason_reasoner,
                 "memories": memories,
                 "user_message": event.content,
+                "settings": self.settings,
             }
             result = tool.run(decision.tool_args, context)
             return gate.decision, result
