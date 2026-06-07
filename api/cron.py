@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from bentlyk import timer  # noqa: E402
-from bentlyk.serverless import build_agent  # noqa: E402
+from bentlyk.serverless import build_agent, owner_id, tg_send  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
@@ -27,12 +27,28 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(b"unauthorized")
             return
 
+        # ?reach=1 forces a proactive outreach (cron schedule also reaches out).
+        from urllib.parse import parse_qs, urlparse
+
+        reach = (parse_qs(urlparse(self.path).query).get("reach") or ["1"])[0] != "0"
+
         agent = build_agent()
+        summary = ""
         try:
             cycle = agent.tick(timer(source="vercel-cron"))
             summary = cycle.headline()
             if cycle.reflection:
                 summary += f" | {cycle.reflection.summary}"
+
+            # Proactivity: reach out to the owner unprompted.
+            if reach:
+                owner = owner_id(agent)
+                token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+                if owner and token:
+                    msg = agent.proactive_message()
+                    if msg:
+                        tg_send(token, owner, msg)
+                        summary += " | reached out"
         finally:
             agent.close()
 
