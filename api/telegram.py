@@ -70,6 +70,21 @@ class handler(BaseHTTPRequestHandler):
                 )
                 return self._ok()
 
+            if text.startswith("/site"):
+                instruction = text[len("/site"):].strip()
+                if not agent.settings.gh_token:
+                    tg_send(token, chat_id, "Чтобы я строил свой сайт, добавь BENTLYK_GH_TOKEN в Vercel.")
+                    return self._ok()
+                html = agent.build_site_page(instruction)
+                from bentlyk.github import commit_file
+
+                result = commit_file(
+                    agent.settings.self_repo, "index.html", html, "bentlyk: build my page",
+                    agent.settings.gh_token,
+                )
+                tg_send(token, chat_id, f"Сделал свою страницу 🏠\n{result}")
+                return self._ok()
+
             if text.startswith("/post"):
                 topic = text[len("/post"):].strip()
                 draft_id, draft = agent.draft_post(topic)

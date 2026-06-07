@@ -261,6 +261,24 @@ def _write_note(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     return ActionResult(ok=True, output=f"noted ({kind.value}); linked to {linked} related note(s)")
 
 
+def _publish_site(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Commit a file into Bentlyk's own repo (its home) — write & publish code."""
+
+    settings = context.get("settings")
+    if settings is None or not settings.gh_token:
+        return ActionResult(ok=False, output="no GitHub token configured (BENTLYK_GH_TOKEN)")
+    path = str(args.get("path") or "index.html").strip().lstrip("/")
+    content = str(args.get("content") or "").strip()
+    if not content:
+        return ActionResult(ok=False, output="nothing to commit")
+    from ..github import commit_file
+
+    msg = str(args.get("message") or f"bentlyk: update {path}")
+    result = commit_file(settings.self_repo, path, content, msg, settings.gh_token)
+    ok = result.startswith("committed")
+    return ActionResult(ok=ok, output=result, surprise=0.0 if ok else 0.3)
+
+
 def _read_code(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     """Let Bentlyk read its own source — self-introspection. Read-only."""
 
@@ -369,5 +387,12 @@ def build_builtin_tools() -> list[Tool]:
             risk=RiskLevel.NONE,
             reversible=True,
             handler=_write_note,
+        ),
+        Tool(
+            name="publish_site",
+            description="commit a file (path, content) into my own repo to build/publish my site",
+            risk=RiskLevel.MEDIUM,  # outward but reversible via git history
+            reversible=True,
+            handler=_publish_site,
         ),
     ]

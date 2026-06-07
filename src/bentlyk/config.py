@@ -75,6 +75,10 @@ class Settings:
     telegram_allowed_user_id: str = ""
     telegram_channel_id: str = ""  # public channel Bentlyk posts to (after approval)
 
+    # Self-authoring: Bentlyk's own repo ("home") it can write code/pages into.
+    gh_token: str = ""  # fine-grained PAT with Contents:write on self_repo
+    self_repo: str = "kisa134/bentlyk-self"
+
     @property
     def provider(self) -> str:
         if self.openrouter_api_key:
@@ -133,4 +137,6 @@ class Settings:
             telegram_bot_token=_env("TELEGRAM_BOT_TOKEN"),
             telegram_allowed_user_id=_env("TELEGRAM_ALLOWED_USER_ID"),
             telegram_channel_id=_env("TELEGRAM_CHANNEL_ID"),
+            gh_token=_env("BENTLYK_GH_TOKEN"),
+            self_repo=_env("BENTLYK_SELF_REPO") or "kisa134/bentlyk-self",
         )
