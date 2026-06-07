@@ -3,18 +3,20 @@
 Visit (GET):  /api/setup?secret=<SETUP_SECRET>
 
 It points Telegram at this deployment's /api/telegram, installs a webhook secret
-token, and ensures the Postgres schema exists. Protected by SETUP_SECRET so
-randoms can't re-point your bot.
+token, and ensures the Postgres schema exists. Protected by SETUP_SECRET.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sys
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
-from _app import tg_call
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from bentlyk.serverless import tg_call  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
@@ -38,7 +40,6 @@ class handler(BaseHTTPRequestHandler):
             payload["secret_token"] = webhook_secret
         result = tg_call(token, "setWebhook", payload)
 
-        # Best-effort schema init so the first real message doesn't pay for it.
         schema_ok = self._ensure_schema()
 
         return self._json(
