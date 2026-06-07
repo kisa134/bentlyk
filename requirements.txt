@@ -1,7 +1,4 @@
-# Dependencies for the Vercel serverless functions (api/).
-# The bentlyk core is dependency-free; only the Postgres backend needs a driver.
-# The reasoner talks to OpenRouter over urllib, so no LLM SDK is needed.
-# `src/` is also bundled via includeFiles + a sys.path shim as a fallback, so the
-# package imports even if this editable install is skipped.
+# Root requirements (mirrors api/requirements.txt, which is the one Vercel's
+# @vercel/python builder actually installs — it looks next to the functions).
+# The bentlyk core is dependency-free; only the Postgres driver is needed.
 psycopg[binary]>=3.1
-.

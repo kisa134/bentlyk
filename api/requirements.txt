@@ -1,0 +1,4 @@
+# @vercel/python installs the requirements.txt located next to the functions.
+# The bentlyk core is dependency-free and is bundled via includeFiles + a
+# sys.path shim, so only the Postgres driver is needed here.
+psycopg[binary]>=3.1
