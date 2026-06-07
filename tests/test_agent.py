@@ -77,24 +77,43 @@ def test_state_persists_across_agent_instances(tmp_path):
     a2.close()
 
 
-def test_proactive_backoff_gating():
+def test_reach_out_urge_is_necessity_driven():
     import time
 
+    from bentlyk.homeostasis import REACH_OUT_THRESHOLD
+
     agent = make_agent()
-    agent.settings.proactive_interval_sec = 1000
     now = time.time()
-    # Never reached out -> due immediately.
-    assert agent.due_to_reach_out(now)
-    # Just reached out -> not due before the interval.
+    # Just talked -> low longing -> quiet.
+    agent.state.last_user_ts = now
+    agent.state.last_outreach_ts = now - 3600
+    agent.state.attachment = 0.8
+    urge_fresh, _ = agent.reach_out_urge(now)
+    assert urge_fresh < REACH_OUT_THRESHOLD
+    # Long silence -> longing grows -> urge to reach out.
+    agent.state.last_user_ts = now - 8 * 3600
+    urge_lonely, why = agent.reach_out_urge(now)
+    assert urge_lonely > urge_fresh
+    # Being ignored (unanswered) -> withdrawal suppresses the urge.
+    agent.state.unanswered_outreach = 4
+    urge_ignored, _ = agent.reach_out_urge(now)
+    assert urge_ignored < urge_lonely
+    # Hard floor: never right after a recent outreach.
     agent.state.last_outreach_ts = now
-    agent.state.unanswered_outreach = 1
-    assert not agent.due_to_reach_out(now + 500)
-    # After 1x interval with 1 unanswered, backoff doubles it -> still not due.
-    assert not agent.due_to_reach_out(now + 1500)
-    assert agent.due_to_reach_out(now + 2100)  # past 2x interval
-    # A human message resets the backoff.
+    assert agent.reach_out_urge(now)[0] == 0.0
+
+
+def test_human_message_resets_withdrawal():
+    agent = make_agent()
+    agent.state.unanswered_outreach = 3
     agent.tick(message("hey"))
     assert agent.state.unanswered_outreach == 0
+
+
+def test_pulse_is_cheap_and_reports_urge():
+    agent = make_agent()
+    urge, reason = agent.pulse()
+    assert 0.0 <= urge <= 1.0 and isinstance(reason, str)
 
 
 def test_offline_runs_without_api_key():

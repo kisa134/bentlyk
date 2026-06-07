@@ -139,17 +139,23 @@ def run_worker(agent: Agent, interval: float) -> int:
 
     agent.boot()
     token = agent.settings.telegram_bot_token
-    print(f"bentlyk worker: ticking every {interval:.0f}s (Ctrl-C to stop)")
+    print(f"bentlyk worker: pulse every {interval:.0f}s (Ctrl-C to stop)")
+    beat = 0
     try:
         while True:
-            cycle = agent.tick(timer(source="worker"))
-            line = cycle.headline()
+            beat += 1
+            # Cheap metabolism every beat: feel state + urge (no LLM).
+            urge, reason = agent.pulse()
+            line = f"urge={urge:.2f} ({reason})"
             owner = owner_id(agent)
             if owner and token:
-                msg = agent.maybe_reach_out()
+                msg = agent.maybe_reach_out()  # LLM only if the urge fires
                 if msg:
                     tg_send(token, owner, msg)
                     line += " | reached out"
+            # Occasionally let it think a full autonomous cycle (a real thought).
+            if beat % 10 == 0:
+                line += f" | thought: {agent.tick(timer(source='worker')).headline()}"
             print(f"  · {line}")
             time.sleep(max(5.0, interval))
     except KeyboardInterrupt:

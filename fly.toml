@@ -1,0 +1,23 @@
+# Bentlyk's body — an always-on process where the entity actually lives.
+# This is NOT a timer service poking it on a schedule: the loop is its metabolism
+# (cheap state updates), and whether it reaches out is decided by inner urge.
+#
+# Deploy (one-time):
+#   fly launch --no-deploy --copy-config --name bentlyk-body
+#   fly secrets set OPENROUTER_API_KEY=... SUPABASE_URL=... SUPABASE_KEY=... TELEGRAM_BOT_TOKEN=...
+#   fly deploy
+#
+# It shares memory/state with the Telegram webhook via Supabase — one being.
+
+app = "bentlyk-body"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  body = "bentlyk worker --interval 120"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

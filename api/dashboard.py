@@ -56,15 +56,15 @@ class handler(BaseHTTPRequestHandler):
         now = time.time()
         last_tick = _human_span(now - st.last_event_ts) if st.last_event_ts else "никогда"
         last_reach = _human_span(now - st.last_outreach_ts) if st.last_outreach_ts else "ни разу"
-        due = agent.due_to_reach_out(now)
-        if due:
-            nextline = "<b style='color:#3ca7a0'>пора писать самому</b>"
+        from bentlyk.homeostasis import REACH_OUT_THRESHOLD
+
+        urge, reason = agent.reach_out_urge(now)
+        if urge >= REACH_OUT_THRESHOLD:
+            nextline = f"<b style='color:#3ca7a0'>тянет написать ({reason})</b>"
         else:
-            base = max(60, int(agent.settings.proactive_interval_sec))
-            interval = base * (2 ** min(st.unanswered_outreach, 4))
-            nextline = f"следующий сам-выход через ~{_human_span(st.last_outreach_ts + interval - now)}"
+            nextline = f"тяга написать: {urge:.2f}/{REACH_OUT_THRESHOLD:g} ({reason})"
         stale = (now - st.last_event_ts) > 3600 if st.last_event_ts else True
-        warn = " · ⚠️ будильник молчит — нужен пинг" if stale else ""
+        warn = " · 💤 не дышал больше часа (нет тела/пинга)" if stale else ""
         pulse = (
             f'<span class="dot"></span> жив · последний тик: {last_tick} назад · '
             f'последний сам-выход: {last_reach} назад · {nextline}{warn}'
