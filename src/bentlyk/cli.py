@@ -126,6 +126,39 @@ def run_ticks(agent: Agent, n: int) -> int:
     return 0
 
 
+def run_worker(agent: Agent, interval: float) -> int:
+    """Persistent autonomous loop: live between messages, reach out when due.
+
+    Shares memory/state with the Telegram webhook via the same store, so the bot
+    and this daemon are one being. Run it on any always-on host (see docs/worker.md).
+    """
+
+    import time
+
+    from .serverless import owner_id, tg_send
+
+    agent.boot()
+    token = agent.settings.telegram_bot_token
+    print(f"bentlyk worker: ticking every {interval:.0f}s (Ctrl-C to stop)")
+    try:
+        while True:
+            cycle = agent.tick(timer(source="worker"))
+            line = cycle.headline()
+            owner = owner_id(agent)
+            if owner and token:
+                msg = agent.maybe_reach_out()
+                if msg:
+                    tg_send(token, owner, msg)
+                    line += " | reached out"
+            print(f"  · {line}")
+            time.sleep(max(5.0, interval))
+    except KeyboardInterrupt:
+        print("\nworker stopped")
+    finally:
+        agent.close()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="bentlyk", description="homeostatic companion agent")
     sub = p.add_subparsers(dest="mode")
@@ -137,6 +170,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     pt = sub.add_parser("tick", help="emit N idle timer ticks")
     pt.add_argument("-n", type=int, default=5)
+
+    pw = sub.add_parser("worker", help="run the persistent autonomous loop (daemon)")
+    pw.add_argument("--interval", type=float, default=1800.0, help="seconds between ticks")
 
     return p
 
@@ -153,6 +189,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_once(agent, text)
     if args.mode == "tick":
         return run_ticks(agent, args.n)
+    if args.mode == "worker":
+        return run_worker(agent, args.interval)
     # default: chat
     return chat(agent)
 

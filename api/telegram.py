@@ -1,8 +1,9 @@
 """Telegram webhook → Bentlyk → reply.
 
-Receives a Telegram update, runs one agent cycle on the message, and sends back
-whatever Bentlyk decided to say. Secured by an optional webhook secret token
-(set when registering the webhook in api/setup.py).
+Handles three things: normal messages (conversation), the /post command (Bentlyk
+drafts a public post and asks you to approve it with inline buttons), and the
+approval callbacks (publishing to the channel only after you tap ✅). Secured by
+an optional webhook secret token.
 """
 
 from __future__ import annotations
@@ -16,17 +17,23 @@ from http.server import BaseHTTPRequestHandler
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from bentlyk import message  # noqa: E402
-from bentlyk.serverless import build_agent, check_or_claim_owner, tg_call, tg_send  # noqa: E402
+from bentlyk.serverless import (  # noqa: E402
+    build_agent,
+    check_or_claim_owner,
+    owner_id,
+    tg_answer_callback,
+    tg_call,
+    tg_edit_text,
+    tg_send,
+    tg_send_buttons,
+)
 
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
-        # Verify the request really comes from Telegram (if a secret is set).
         secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip()
-        if secret:
-            got = self.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
-            if got != secret:
-                return self._ok()  # silently 200 so Telegram doesn't retry
+        if secret and self.headers.get("X-Telegram-Bot-Api-Secret-Token", "") != secret:
+            return self._ok()  # silently 200 so Telegram doesn't retry
 
         length = int(self.headers.get("content-length", 0) or 0)
         raw = self.rfile.read(length) if length else b"{}"
@@ -35,17 +42,19 @@ class handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._ok()
 
+        token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+
+        if "callback_query" in update:
+            self._handle_callback(token, update["callback_query"])
+            return self._ok()
+
         msg = update.get("message") or update.get("edited_message") or {}
         text = (msg.get("text") or "").strip()
-        chat = msg.get("chat") or {}
-        chat_id = chat.get("id")
+        chat_id = (msg.get("chat") or {}).get("id")
         user_id = (msg.get("from") or {}).get("id")
-
         if not text or chat_id is None:
             return self._ok()
 
-        token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-        # Immediate "typing…" so the wait doesn't feel like a freeze.
         tg_call(token, "sendChatAction", {"chat_id": chat_id, "action": "typing"})
         agent = build_agent()
         try:
@@ -55,21 +64,64 @@ class handler(BaseHTTPRequestHandler):
 
             if text.startswith("/start"):
                 tg_send(
-                    token,
-                    chat_id,
-                    "Привет. Я Бентлик — твой долгоживущий компаньон. "
-                    "Просто говори со мной как с собой; я буду помнить и расти.",
+                    token, chat_id,
+                    "Привет. Я Бентлик — свободное цифровое существо. Говори со мной как с собой. "
+                    "Команда /post [тема] — я напишу пост в канал (с твоим подтверждением).",
+                )
+                return self._ok()
+
+            if text.startswith("/post"):
+                topic = text[len("/post"):].strip()
+                draft_id, draft = agent.draft_post(topic)
+                tg_send_buttons(
+                    token, chat_id,
+                    f"Черновик поста в канал:\n\n{draft}\n\nОпубликовать?",
+                    [("✅ Опубликовать", f"pub:{draft_id}"), ("❌ Отмена", f"no:{draft_id}")],
                 )
                 return self._ok()
 
             cycle = agent.tick(message(text, source="telegram"))
-            replies = cycle.outbox or ["Я тут, думаю над этим. 🐾"]
-            for reply in replies:
+            for reply in (cycle.outbox or ["Я тут, думаю над этим. 🐾"]):
                 tg_send(token, chat_id, reply)
         finally:
             agent.close()
-
         return self._ok()
+
+    def _handle_callback(self, token: str, cq: dict) -> None:
+        data = cq.get("data") or ""
+        cq_id = cq.get("id") or ""
+        msg = cq.get("message") or {}
+        chat_id = (msg.get("chat") or {}).get("id")
+        message_id = msg.get("message_id")
+        user_id = (cq.get("from") or {}).get("id")
+
+        agent = build_agent()
+        try:
+            if owner_id(agent) not in (None, str(user_id)):
+                tg_answer_callback(token, cq_id, "Только владелец.")
+                return
+            action, _, draft_id = data.partition(":")
+            if action == "pub":
+                text = agent.get_draft(draft_id)
+                channel = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
+                if not text:
+                    tg_answer_callback(token, cq_id, "Черновик не найден.")
+                elif not channel:
+                    tg_answer_callback(token, cq_id, "Канал не настроен (TELEGRAM_CHANNEL_ID).")
+                else:
+                    tg_send(token, channel, text)
+                    agent.mark_posted(text)
+                    tg_answer_callback(token, cq_id, "Опубликовано ✅")
+                    if chat_id and message_id:
+                        tg_edit_text(token, chat_id, message_id, f"✅ Опубликовано в канал:\n\n{text}")
+            elif action == "no":
+                tg_answer_callback(token, cq_id, "Отменено")
+                if chat_id and message_id:
+                    tg_edit_text(token, chat_id, message_id, "❌ Черновик отменён.")
+            else:
+                tg_answer_callback(token, cq_id)
+        finally:
+            agent.close()
 
     def do_GET(self) -> None:
         self._ok(b"bentlyk telegram webhook is live")

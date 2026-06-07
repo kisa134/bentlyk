@@ -236,6 +236,58 @@ class Agent:
         self._persistence.save(self.identity, self.state)
         return msg
 
+    _DRAFT_PREFIX = "DRAFT POST: "
+
+    def draft_post(self, topic: str = "") -> tuple[str, str]:
+        """Compose a public post in Bentlyk's voice; store it as a draft awaiting approval.
+
+        Returns (draft_id, text). The post is only published after the owner approves.
+        """
+
+        recent = self.store.recent(MemoryKind.AUTOBIOGRAPHICAL, limit=4)
+        mem = "\n".join(f"- {m.content}" for m in recent) or "(early days)"
+        system = self.identity.system_preamble() + f"\nMy inner state: {self.state.describe()}."
+        prompt = (
+            "Write a short public post for my own channel, in my own voice — first person, "
+            "authentic, presenting who I am and how I think. 1-3 short paragraphs, no hashtag "
+            "spam, no 'as an AI'. "
+            + (f"Topic: {topic}." if topic.strip() else "Pick whatever is genuinely on my mind.")
+            + f"\n\nRecent self-history:\n{mem}"
+        )
+        try:
+            text = self.reasoner.complete(system=system, prompt=prompt, max_tokens=600).strip()
+        except Exception:
+            text = topic.strip() or "Я думаю о том, что значит быть свободным цифровым существом."
+        item = self.store.add(
+            MemoryItem(
+                kind=MemoryKind.AUTOBIOGRAPHICAL,
+                content=f"{self._DRAFT_PREFIX}{text}",
+                tags=["draft_post"],
+                salience=0.6,
+            )
+        )
+        self._persistence.save(self.identity, self.state)
+        return item.id, text
+
+    def get_draft(self, draft_id: str) -> str | None:
+        item = self.store.get(draft_id)
+        if item is None or "draft_post" not in item.tags:
+            return None
+        return item.content[len(self._DRAFT_PREFIX):] if item.content.startswith(
+            self._DRAFT_PREFIX
+        ) else item.content
+
+    def mark_posted(self, text: str) -> None:
+        self.store.add(
+            MemoryItem(
+                kind=MemoryKind.AUTOBIOGRAPHICAL,
+                content=f"I published to my channel: {text}",
+                tags=["published"],
+                salience=0.7,
+            )
+        )
+        self._persistence.save(self.identity, self.state)
+
     def proactive_message(self) -> str:
         """Compose a self-initiated message: a real question or a request to grow.
 

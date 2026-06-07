@@ -71,6 +71,7 @@ class Settings:
     # Interfaces
     telegram_bot_token: str = ""
     telegram_allowed_user_id: str = ""
+    telegram_channel_id: str = ""  # public channel Bentlyk posts to (after approval)
 
     @property
     def provider(self) -> str:
@@ -128,4 +129,5 @@ class Settings:
             proactive_interval_sec=int(_env("BENTLYK_PROACTIVE_INTERVAL_SEC") or "1800"),
             telegram_bot_token=_env("TELEGRAM_BOT_TOKEN"),
             telegram_allowed_user_id=_env("TELEGRAM_ALLOWED_USER_ID"),
+            telegram_channel_id=_env("TELEGRAM_CHANNEL_ID"),
         )
