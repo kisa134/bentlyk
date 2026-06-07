@@ -54,7 +54,12 @@ def _connect(dsn: str):
         import psycopg  # type: ignore
     except ImportError as exc:  # pragma: no cover - optional path
         raise RuntimeError("psycopg not installed; `pip install bentlyk[postgres]`") from exc
-    return psycopg.connect(dsn, autocommit=True)
+    conn = psycopg.connect(dsn, autocommit=True)
+    # Supabase's transaction-mode pooler (pgbouncer) doesn't support server-side
+    # prepared statements; disable them to avoid "prepared statement already
+    # exists" errors across pooled connections.
+    conn.prepare_threshold = None
+    return conn
 
 
 def ensure_schema(dsn: str) -> None:
