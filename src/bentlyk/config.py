@@ -64,6 +64,9 @@ class Settings:
     # Behaviour
     max_autonomy: AutonomyMode = AutonomyMode.SUGGEST
     identity: str = "default"
+    # Base interval between self-initiated outreaches (seconds). Backs off when the
+    # person isn't replying. Default 30 min.
+    proactive_interval_sec: int = 1800
 
     # Interfaces
     telegram_bot_token: str = ""
@@ -122,6 +125,7 @@ class Settings:
             supabase_key=_env("SUPABASE_KEY") or _SUPABASE_KEY_DEFAULT,
             max_autonomy=AutonomyMode.from_str(_env("BENTLYK_MAX_AUTONOMY") or "suggest"),
             identity=_env("BENTLYK_IDENTITY") or "default",
+            proactive_interval_sec=int(_env("BENTLYK_PROACTIVE_INTERVAL_SEC") or "1800"),
             telegram_bot_token=_env("TELEGRAM_BOT_TOKEN"),
             telegram_allowed_user_id=_env("TELEGRAM_ALLOWED_USER_ID"),
         )

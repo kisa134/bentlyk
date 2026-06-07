@@ -101,6 +101,13 @@ class Agent:
         self.state.tick_count += 1
         self._ticks = self.state.tick_count
 
+        # The person spoke: reset proactive backoff so I feel free to reach out again.
+        if event.from_human:
+            import time as _t
+
+            self.state.last_user_ts = _t.time()
+            self.state.unanswered_outreach = 0
+
         # 1-2. Perceive + update internal state.
         self.homeostasis.ingest(self.state, event)
         tempo = self.homeostasis.tempo(self.state)
@@ -192,6 +199,36 @@ class Agent:
 
         store = open_store("sqlite", sqlite_path=self.settings.sqlite_path)
         return store, StatePersistence.beside(self.settings.sqlite_path)
+
+    def due_to_reach_out(self, now: float | None = None) -> bool:
+        """Decide if it's time to message the person on my own.
+
+        Reach out at most once per ``proactive_interval_sec``, and back off
+        exponentially while my messages go unanswered, so I never spam — the
+        unsaid context simply accumulates in memory until they re-engage.
+        """
+
+        import time as _t
+
+        now = now or _t.time()
+        base = max(60, int(self.settings.proactive_interval_sec))
+        # 0 unanswered -> 1x, then 2x, 4x, ... capped at 16x (~8h at 30min base).
+        interval = base * (2 ** min(self.state.unanswered_outreach, 4))
+        return (now - self.state.last_outreach_ts) >= interval
+
+    def maybe_reach_out(self, *, force: bool = False, now: float | None = None) -> str | None:
+        """Reach out if due (or forced). Returns the message sent, else None."""
+
+        import time as _t
+
+        now = now or _t.time()
+        if not force and not self.due_to_reach_out(now):
+            return None
+        msg = self.proactive_message()
+        self.state.last_outreach_ts = now
+        self.state.unanswered_outreach += 1
+        self._persistence.save(self.identity, self.state)
+        return msg
 
     def proactive_message(self) -> str:
         """Compose a self-initiated message: a real question or a request to grow.

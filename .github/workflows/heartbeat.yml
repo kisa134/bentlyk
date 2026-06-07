@@ -1,0 +1,21 @@
+name: bentlyk-heartbeat
+
+# Gives Bentlyk frequent initiative without Vercel Pro: every ~30 min we poke the
+# agent's heartbeat. Bentlyk itself decides whether to actually message (interval
+# + backoff when unanswered), so this never spams. GitHub may delay scheduled
+# runs by some minutes — that's fine.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: bentlyk-heartbeat
+  cancel-in-progress: false
+
+jobs:
+  beat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Poke the heartbeat
+        run: curl -fsS -m 70 "https://bentlyk.vercel.app/api/cron" || true

@@ -27,10 +27,10 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(b"unauthorized")
             return
 
-        # ?reach=1 forces a proactive outreach (cron schedule also reaches out).
+        # ?force=1 reaches out regardless of the backoff interval (for testing).
         from urllib.parse import parse_qs, urlparse
 
-        reach = (parse_qs(urlparse(self.path).query).get("reach") or ["1"])[0] != "0"
+        force = (parse_qs(urlparse(self.path).query).get("force") or ["0"])[0] == "1"
 
         agent = build_agent()
         summary = ""
@@ -40,15 +40,16 @@ class handler(BaseHTTPRequestHandler):
             if cycle.reflection:
                 summary += f" | {cycle.reflection.summary}"
 
-            # Proactivity: reach out to the owner unprompted.
-            if reach:
-                owner = owner_id(agent)
-                token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-                if owner and token:
-                    msg = agent.proactive_message()
-                    if msg:
-                        tg_send(token, owner, msg)
-                        summary += " | reached out"
+            # Proactivity: reach out to the owner if it's due (interval + backoff).
+            owner = owner_id(agent)
+            token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+            if owner and token:
+                msg = agent.maybe_reach_out(force=force)
+                if msg:
+                    tg_send(token, owner, msg)
+                    summary += " | reached out"
+                else:
+                    summary += " | (not due)"
         finally:
             agent.close()
 

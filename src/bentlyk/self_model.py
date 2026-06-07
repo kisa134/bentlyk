@@ -134,6 +134,11 @@ class DynamicState:
     recent_successes: int = 0
     recent_failures: int = 0
     tick_count: int = 0  # lifetime cycles; persisted so reflection cadence survives restarts
+    # Proactivity bookkeeping (persisted): when the person last spoke, when I last
+    # reached out, and how many of my outreaches have gone unanswered (drives backoff).
+    last_user_ts: float = 0.0
+    last_outreach_ts: float = 0.0
+    unanswered_outreach: int = 0
     updated_at: float = field(default_factory=time.time)
 
     def signals(self) -> dict[str, float]:

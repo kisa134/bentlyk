@@ -77,6 +77,26 @@ def test_state_persists_across_agent_instances(tmp_path):
     a2.close()
 
 
+def test_proactive_backoff_gating():
+    import time
+
+    agent = make_agent()
+    agent.settings.proactive_interval_sec = 1000
+    now = time.time()
+    # Never reached out -> due immediately.
+    assert agent.due_to_reach_out(now)
+    # Just reached out -> not due before the interval.
+    agent.state.last_outreach_ts = now
+    agent.state.unanswered_outreach = 1
+    assert not agent.due_to_reach_out(now + 500)
+    # After 1x interval with 1 unanswered, backoff doubles it -> still not due.
+    assert not agent.due_to_reach_out(now + 1500)
+    assert agent.due_to_reach_out(now + 2100)  # past 2x interval
+    # A human message resets the backoff.
+    agent.tick(message("hey"))
+    assert agent.state.unanswered_outreach == 0
+
+
 def test_offline_runs_without_api_key():
     agent = make_agent()
     cycle = agent.tick(message("what should we do today?"))
