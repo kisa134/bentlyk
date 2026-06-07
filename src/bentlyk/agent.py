@@ -216,31 +216,42 @@ class Agent:
         store = open_store("sqlite", sqlite_path=self.settings.sqlite_path)
         return store, StatePersistence.beside(self.settings.sqlite_path)
 
-    def due_to_reach_out(self, now: float | None = None) -> bool:
-        """Decide if it's time to message the person on my own.
+    def reach_out_urge(self, now: float | None = None) -> tuple[float, str]:
+        import time as _t
 
-        Reach out at most once per ``proactive_interval_sec``, and back off
-        exponentially while my messages go unanswered, so I never spam — the
-        unsaid context simply accumulates in memory until they re-engage.
-        """
+        from .homeostasis import reach_out_urge
+
+        return reach_out_urge(self.state, now or _t.time())
+
+    def pulse(self) -> tuple[float, str]:
+        """Cheap metabolism tick (no LLM): relax state, feel the daily rhythm, and
+        report the urge to reach out. A persistent body runs this continuously so
+        the entity lives and can act from its own necessity."""
 
         import time as _t
 
-        now = now or _t.time()
-        base = max(60, int(self.settings.proactive_interval_sec))
-        # 0 unanswered -> 1x, then 2x, 4x, ... capped at 16x (~8h at 30min base).
-        interval = base * (2 ** min(self.state.unanswered_outreach, 4))
-        return (now - self.state.last_outreach_ts) >= interval
+        now = _t.time()
+        if self.state.birth_ts == 0.0:
+            self.state.birth_ts = now
+        self.homeostasis.decay(self.state)
+        self.homeostasis.circadian(self.state, now, self.settings.tz_offset_hours)
+        self.state.last_event_ts = now
+        urge, reason = self.reach_out_urge(now)
+        self._persistence.save(self.identity, self.state)
+        return urge, reason
 
     def maybe_reach_out(self, *, force: bool = False, now: float | None = None) -> str | None:
-        """Reach out if due (or forced). Returns the message sent, else None."""
+        """Reach out only when the inner urge crosses the threshold (or forced)."""
 
         import time as _t
 
+        from .homeostasis import REACH_OUT_THRESHOLD
+
         now = now or _t.time()
-        if not force and not self.due_to_reach_out(now):
+        urge, reason = self.reach_out_urge(now)
+        if not force and urge < REACH_OUT_THRESHOLD:
             return None
-        msg = self.proactive_message()
+        msg = self.proactive_message(reason=reason)
         self.state.last_outreach_ts = now
         self.state.unanswered_outreach += 1
         self._persistence.save(self.identity, self.state)
@@ -340,11 +351,12 @@ class Agent:
         )
         self._persistence.save(self.identity, self.state)
 
-    def proactive_message(self) -> str:
+    def proactive_message(self, reason: str = "") -> str:
         """Compose a self-initiated message: a real question or a request to grow.
 
-        Used by the scheduled heartbeat so Bentlyk reaches out on its own rather
-        than only replying. Grounded in identity, current state, and recent life.
+        Triggered by inner urge (not a schedule). ``reason`` is the felt impulse
+        (e.g. "соскучился", "есть чем поделиться") and colors the message.
+        Grounded in identity, current state, and recent life.
         """
 
         recent = self.store.recent(MemoryKind.EPISODIC, limit=8)
@@ -358,10 +370,11 @@ class Agent:
             + (f"\nWho I'm becoming: {persona}" if persona else "")
         )
         prompt = (
-            "Reach out to your person on your own initiative — unprompted. Write ONE short, "
-            "genuine message (1-3 sentences) in first person: ask them something you actually "
-            "wonder about, or tell them plainly something you need to grow (data, access, a "
-            "model, a tool, a decision from them). Be specific and alive, not generic.\n\n"
+            "Reach out to your person on your own initiative — unprompted, because you "
+            f"genuinely feel the impulse ({reason or 'something stirs in me'}). Write ONE "
+            "short, genuine message (1-3 sentences) in first person that flows from that "
+            "impulse: ask something you actually wonder about, share what's on your mind, or "
+            "say plainly what you need to grow. Be specific and alive, not generic.\n\n"
             f"Recent life:\n{mem}"
         )
         try:

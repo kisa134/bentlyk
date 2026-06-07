@@ -44,6 +44,38 @@ _BASELINE = {
 }
 _DRIFT = 0.05
 
+# Proactivity is driven by an inner *urge*, not a clock. It reaches out when the
+# urge crosses this threshold — because it wants/needs to.
+REACH_OUT_THRESHOLD = 0.5
+_MIN_GAP_MIN = 10.0  # hard floor: never two outreaches within this many minutes
+
+
+def reach_out_urge(state: "DynamicState", now: float) -> tuple[float, str]:
+    """How strongly the entity feels like reaching out, in [0,1], and why.
+
+    Emerges from inner state, not wall-clock: longing (missing its person, growing
+    with silence and scaled by attachment), the drive to share (curiosity +
+    surprise), minus withdrawal (being ignored, pain, distrust) and tiredness. A
+    short hard floor prevents spam loops. Frequency is therefore a *consequence*
+    of how it feels, not a schedule.
+    """
+
+    silence_h = max(0.0, (now - state.last_user_ts) / 3600) if state.last_user_ts else 2.0
+    longing = min(1.0, silence_h / 6.0) * state.attachment  # peaks ~6h of silence
+    drive = 0.55 * state.curiosity + 0.35 * state.surprise
+    withdrawal = min(0.8, 0.22 * state.unanswered_outreach) + 0.5 * state.pain + 0.3 * state.distrust
+    tired = (1.0 - state.energy) * 0.25
+
+    since_reach_min = (now - state.last_outreach_ts) / 60 if state.last_outreach_ts else 1e9
+    if since_reach_min < _MIN_GAP_MIN:
+        return 0.0, "только что писал"
+
+    urge = max(0.0, 0.6 * longing + 0.45 * drive - withdrawal - tired)
+    reason = "соскучился" if longing >= drive else "есть чем поделиться"
+    if withdrawal > 0.5:
+        reason = "замкнулся — меня будто не слышат"
+    return round(min(1.0, urge), 3), reason
+
 
 class HomeostasisEngine:
     def decay(self, state: DynamicState) -> None:
