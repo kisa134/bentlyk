@@ -64,7 +64,9 @@ def test_autonomy_never_exceeds_ceiling():
 
 def test_state_persists_across_agent_instances(tmp_path):
     db = tmp_path / "bentlyk.db"
-    settings = Settings(store="sqlite", sqlite_path=db, anthropic_api_key="")
+    settings = Settings(
+        store="sqlite", sqlite_path=db, anthropic_api_key="", supabase_url="", supabase_key=""
+    )
     a1 = Agent(settings=settings)
     a1.tick(message("remember this moment"))
     a1.state.curiosity = 0.99

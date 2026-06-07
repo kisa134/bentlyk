@@ -165,7 +165,19 @@ class Agent:
         memory) instead of hard-crashing. The failure is logged for diagnosis.
         """
 
-        if self.settings.store == "postgres":  # pragma: no cover - needs a live database
+        # Preferred: Supabase over HTTPS REST (serverless-friendly, no pooler/IPv6).
+        if self.settings.supabase_enabled:  # pragma: no cover - needs network
+            try:
+                from .supabase_rest import SupabaseRest, SupabaseRestState
+
+                store = SupabaseRest(self.settings.supabase_url, self.settings.supabase_key)
+                store.recent(MemoryKind.EPISODIC, 1)  # probe connectivity + grants
+                print("[bentlyk] memory: supabase REST", flush=True)
+                return store, SupabaseRestState(self.settings.supabase_url, self.settings.supabase_key)
+            except Exception as exc:
+                print(f"[bentlyk] supabase REST unavailable ({exc}); trying next", flush=True)
+
+        if self.settings.store == "postgres" and self.settings.pg_dsn:  # pragma: no cover
             try:
                 from .pg import PgMemoryStore, PgStatePersistence
 
