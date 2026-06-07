@@ -48,6 +48,24 @@ def tg_send(token: str, chat_id: int | str, text: str) -> None:
         tg_call(token, "sendMessage", {"chat_id": chat_id, "text": chunk})
 
 
+def tg_send_buttons(token: str, chat_id: int | str, text: str, buttons: list[tuple[str, str]]) -> None:
+    """Send a message with one row of inline buttons: [(label, callback_data), ...]."""
+
+    tg_call(token, "sendMessage", {
+        "chat_id": chat_id,
+        "text": text[:4000],
+        "reply_markup": {"inline_keyboard": [[{"text": t, "callback_data": d} for t, d in buttons]]},
+    })
+
+
+def tg_answer_callback(token: str, callback_id: str, text: str = "") -> None:
+    tg_call(token, "answerCallbackQuery", {"callback_query_id": callback_id, "text": text})
+
+
+def tg_edit_text(token: str, chat_id: int | str, message_id: int, text: str) -> None:
+    tg_call(token, "editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": text[:4000]})
+
+
 def _chunks(text: str, size: int) -> list[str]:
     text = text or "…"
     return [text[i : i + size] for i in range(0, len(text), size)]
