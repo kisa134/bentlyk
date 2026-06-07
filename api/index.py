@@ -11,5 +11,6 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.end_headers()
         self.wfile.write(
-            b"bentlyk is alive. Telegram webhook: /api/telegram | setup: /api/setup"
+            b"bentlyk is alive. dashboard: /api/dashboard?key=... | "
+            b"telegram webhook: /api/telegram | setup: /api/setup"
         )
