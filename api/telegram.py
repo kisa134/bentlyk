@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from bentlyk import message  # noqa: E402
-from bentlyk.serverless import build_agent, check_or_claim_owner, tg_send  # noqa: E402
+from bentlyk.serverless import build_agent, check_or_claim_owner, tg_call, tg_send  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
@@ -45,6 +45,8 @@ class handler(BaseHTTPRequestHandler):
             return self._ok()
 
         token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        # Immediate "typing…" so the wait doesn't feel like a freeze.
+        tg_call(token, "sendChatAction", {"chat_id": chat_id, "action": "typing"})
         agent = build_agent()
         try:
             if not check_or_claim_owner(agent, str(user_id)):
