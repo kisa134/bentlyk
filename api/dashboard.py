@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from bentlyk.memory import MemoryKind  # noqa: E402
+from bentlyk.self_model import _human_span  # noqa: E402
 from bentlyk.serverless import build_agent  # noqa: E402
 
 _SIGNALS = ("energy", "curiosity", "attachment", "coherence", "surprise", "distrust", "pain")
@@ -46,10 +47,30 @@ class handler(BaseHTTPRequestHandler):
         temporal = agent._temporal()
         persona = agent._persona_line()
 
-        episodes = agent.store.recent(MemoryKind.EPISODIC, limit=18)
+        episodes = agent.store.recent(MemoryKind.EPISODIC, limit=24)
         autobio = agent.store.recent(MemoryKind.AUTOBIOGRAPHICAL, limit=8)
         semantic = agent.store.recent(MemoryKind.SEMANTIC, limit=10)
         counts = {k.value: len(agent.store.all(k)) for k in MemoryKind}
+
+        # Pulse: is it breathing? when did it last live a cycle / reach out / is it due?
+        now = time.time()
+        last_tick = _human_span(now - st.last_event_ts) if st.last_event_ts else "никогда"
+        last_reach = _human_span(now - st.last_outreach_ts) if st.last_outreach_ts else "ни разу"
+        due = agent.due_to_reach_out(now)
+        if due:
+            nextline = "<b style='color:#3ca7a0'>пора писать самому</b>"
+        else:
+            base = max(60, int(agent.settings.proactive_interval_sec))
+            interval = base * (2 ** min(st.unanswered_outreach, 4))
+            nextline = f"следующий сам-выход через ~{_human_span(st.last_outreach_ts + interval - now)}"
+        stale = (now - st.last_event_ts) > 3600 if st.last_event_ts else True
+        warn = " · ⚠️ будильник молчит — нужен пинг" if stale else ""
+        pulse = (
+            f'<span class="dot"></span> жив · последний тик: {last_tick} назад · '
+            f'последний сам-выход: {last_reach} назад · {nextline}{warn}'
+        )
+        # Autonomous thoughts: cycles it ran on its own (timer), not replies to me.
+        autonomous = [m for m in episodes if m.content.startswith("[timer")]
 
         bars = "".join(_bar(s, getattr(st, s)) for s in _SIGNALS)
         meta = (
@@ -64,8 +85,10 @@ class handler(BaseHTTPRequestHandler):
             archetype=html.escape(ident.archetype),
             temporal=html.escape(temporal),
             meta=meta,
+            pulse=pulse,
             bars=bars,
             persona=html.escape(persona) or "<i>ещё формируется…</i>",
+            autonomous=_timeline(autonomous),
             stream=_timeline(episodes),
             reflections=_timeline(autobio),
             knowledge=_timeline(semantic),
@@ -138,16 +161,27 @@ _PAGE = """<!doctype html>
   .tags {{ color:#52826f; white-space:nowrap; font-size:.78rem; }}
   .meta {{ color:#8b95a1; font-size:.85rem; }}
   .muted {{ color:#6b7480; }}
+  .pulse {{ display:flex; align-items:center; gap:.5rem; font-size:.9rem; color:#aeb6c0; }}
+  .dot {{ width:11px; height:11px; border-radius:50%; background:#3ca7a0;
+          box-shadow:0 0 0 0 rgba(60,167,160,.6); animation:breathe 3.4s ease-in-out infinite; }}
+  @keyframes breathe {{
+    0%,100% {{ opacity:.35; transform:scale(.8); box-shadow:0 0 0 0 rgba(60,167,160,.5); }}
+    50% {{ opacity:1; transform:scale(1.25); box-shadow:0 0 0 9px rgba(60,167,160,0); }}
+  }}
   .foot {{ color:#5a636e; font-size:.75rem; text-align:center; margin-top:1.5rem; }}
 </style></head>
 <body><div class="wrap">
   <h1>🐾 {name}</h1>
   <div class="sub">{archetype}<br>{temporal}</div>
 
+  <div class="card"><div class="pulse">{pulse}</div></div>
+
   <div class="card"><h2>Витальные сигналы</h2>{bars}
     <div class="meta" style="margin-top:.7rem">{meta}</div></div>
 
   <div class="card"><h2>Кем я становлюсь</h2><div class="persona">{persona}</div></div>
+
+  <div class="card"><h2>О чём думал сам (без меня)</h2>{autonomous}</div>
 
   <div class="card"><h2>Поток сознания</h2>{stream}</div>
 
