@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bentlyk/schemas/event.json",
+  "title": "Event",
+  "description": "A normalized input from the Perception layer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "content"],
+  "properties": {
+    "id": { "type": "string" },
+    "kind": {
+      "type": "string",
+      "enum": ["message", "timer", "file", "feed", "webhook", "system"]
+    },
+    "content": { "type": "string" },
+    "source": { "type": "string" },
+    "payload": {
+      "type": "object",
+      "description": "Arbitrary source data. May contain a 'signals' object nudging homeostatic signals.",
+      "properties": {
+        "signals": {
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        }
+      }
+    },
+    "ts": { "type": "number" }
+  }
+}

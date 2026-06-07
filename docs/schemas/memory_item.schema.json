@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bentlyk/schemas/memory_item.json",
+  "title": "MemoryItem",
+  "description": "A single memory across one of the five contours.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "content", "salience"],
+  "properties": {
+    "id": { "type": "string" },
+    "kind": {
+      "type": "string",
+      "enum": ["short_term", "episodic", "semantic", "procedural", "autobiographical"]
+    },
+    "content": { "type": "string" },
+    "salience": { "type": "number", "minimum": 0, "maximum": 1 },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "created_at": { "type": "number" },
+    "last_used_at": { "type": "number" },
+    "use_count": { "type": "integer", "minimum": 0 },
+    "embedding": { "type": "array", "items": { "type": "number" } }
+  }
+}

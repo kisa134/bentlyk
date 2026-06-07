@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bentlyk"
+version = "0.1.0"
+description = "A long-lived autonomous companion agent with a stable identity, layered memory, internal homeostatic state, an autonomous goal engine, and gated actions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "bentlyk" }]
+keywords = ["agent", "homeostasis", "autonomous", "memory", "llm", "companion"]
+
+# Core runs on the standard library alone (SQLite + a deterministic LLM fallback),
+# so the agent boots with zero external services. Extras unlock the production path.
+dependencies = []
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40"]
+postgres = ["psycopg[binary]>=3.1", "pgvector>=0.2"]
+telegram = ["python-telegram-bot>=21"]
+dev = ["pytest>=7", "ruff>=0.5"]
+
+[project.scripts]
+bentlyk = "bentlyk.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
