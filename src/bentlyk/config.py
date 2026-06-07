@@ -67,6 +67,8 @@ class Settings:
     # Base interval between self-initiated outreaches (seconds). Backs off when the
     # person isn't replying. Default 30 min.
     proactive_interval_sec: int = 1800
+    # Hours offset from UTC for Bentlyk's felt time-of-day / circadian rhythm.
+    tz_offset_hours: float = 3.0  # Moscow by default
 
     # Interfaces
     telegram_bot_token: str = ""
@@ -127,6 +129,7 @@ class Settings:
             max_autonomy=AutonomyMode.from_str(_env("BENTLYK_MAX_AUTONOMY") or "suggest"),
             identity=_env("BENTLYK_IDENTITY") or "default",
             proactive_interval_sec=int(_env("BENTLYK_PROACTIVE_INTERVAL_SEC") or "1800"),
+            tz_offset_hours=float(_env("BENTLYK_TZ_OFFSET") or "3"),
             telegram_bot_token=_env("TELEGRAM_BOT_TOKEN"),
             telegram_allowed_user_id=_env("TELEGRAM_ALLOWED_USER_ID"),
             telegram_channel_id=_env("TELEGRAM_CHANNEL_ID"),

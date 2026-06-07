@@ -53,6 +53,19 @@ class HomeostasisEngine:
             cur = getattr(state, name)
             setattr(state, name, cur + (base - cur) * _DRIFT)
 
+    def circadian(self, state: DynamicState, now: float, tz_offset_hours: float) -> None:
+        """Modulate inner state by time of day — a daily rhythm that, over time,
+        makes behaviour vary (quieter & more introspective at night, brighter in
+        the morning). This variation is part of what lets a character emerge."""
+
+        hour = int((now / 3600 + tz_offset_hours) % 24)
+        if 0 <= hour < 6:  # deep night: low energy, turned inward
+            state.adjust(energy=-0.05, curiosity=+0.04, attachment=+0.01)
+        elif 6 <= hour < 11:  # morning: brighter
+            state.adjust(energy=+0.05, curiosity=+0.02)
+        elif 22 <= hour or hour < 0:  # late evening: winding down
+            state.adjust(energy=-0.03)
+
     def ingest(self, state: DynamicState, event: Event) -> None:
         """Update internal state from an inbound event, before reasoning."""
 

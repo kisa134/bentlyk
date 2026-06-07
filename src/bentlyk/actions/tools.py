@@ -77,9 +77,13 @@ def _respond(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     mem = "\n".join(f"- ({m.kind.value}) {m.content}" for m in memories) or "(nothing relevant yet)"
     preamble = identity.system_preamble() if identity else "You are Bentlyk."
     mood = state.describe() if state else ""
+    temporal = context.get("temporal") or ""
+    persona = context.get("persona") or ""
     system = (
         preamble
         + f"\nYour current internal state — let it subtly color your tone, never name it: {mood}."
+        + (f"\nTime sense (let it color you, don't recite it): {temporal}" if temporal else "")
+        + (f"\nWho I'm becoming (my evolving self): {persona}" if persona else "")
     )
 
     if reasoner is None:  # pragma: no cover - reasoner always provided in the loop

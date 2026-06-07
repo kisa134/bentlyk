@@ -30,7 +30,12 @@ from .memory import MemoryItem, MemoryKind, MemoryStore, open_store
 from .persistence import StatePersistence
 from .planner import Decision, Move, Planner
 from .reflection import Reflection, ReflectionEngine
-from .self_model import DynamicState, IdentityCore, load_identity_profile
+from .self_model import (
+    DynamicState,
+    IdentityCore,
+    load_identity_profile,
+    temporal_context,
+)
 
 
 @dataclass(slots=True)
@@ -97,19 +102,24 @@ class Agent:
 
     # --- the loop -------------------------------------------------------------
     def tick(self, raw_event: object) -> CycleResult:
+        import time as _t
+
         event = normalize(raw_event)
+        now = _t.time()
         self.state.tick_count += 1
         self._ticks = self.state.tick_count
+        if self.state.birth_ts == 0.0:  # first breath: anchor my age
+            self.state.birth_ts = now
+        self.state.last_event_ts = now
 
         # The person spoke: reset proactive backoff so I feel free to reach out again.
         if event.from_human:
-            import time as _t
-
-            self.state.last_user_ts = _t.time()
+            self.state.last_user_ts = now
             self.state.unanswered_outreach = 0
 
-        # 1-2. Perceive + update internal state.
+        # 1-2. Perceive + update internal state (incl. the daily rhythm).
         self.homeostasis.ingest(self.state, event)
+        self.homeostasis.circadian(self.state, now, self.settings.tz_offset_hours)
         tempo = self.homeostasis.tempo(self.state)
 
         # 3. Retrieve relevant memory, expanded along the memory graph (associative).
@@ -236,6 +246,24 @@ class Agent:
         self._persistence.save(self.identity, self.state)
         return msg
 
+    def _temporal(self, now: float | None = None) -> str:
+        import time as _t
+
+        return temporal_context(
+            now or _t.time(),
+            birth_ts=self.state.birth_ts,
+            last_user_ts=self.state.last_user_ts,
+            tz_offset_hours=self.settings.tz_offset_hours,
+        )
+
+    def _persona_line(self) -> str:
+        """The latest 'who I'm becoming' self-narrative, if reflection has formed one."""
+
+        for m in self.store.recent(MemoryKind.AUTOBIOGRAPHICAL, limit=8):
+            if "self_narrative" in m.tags:
+                return m.content
+        return ""
+
     _DRAFT_PREFIX = "DRAFT POST: "
 
     def draft_post(self, topic: str = "") -> tuple[str, str]:
@@ -298,9 +326,12 @@ class Agent:
         recent = self.store.recent(MemoryKind.EPISODIC, limit=8)
         auto = self.store.recent(MemoryKind.AUTOBIOGRAPHICAL, limit=3)
         mem = "\n".join(f"- {m.content}" for m in (recent + auto)) or "(little lived yet)"
+        persona = self._persona_line()
         system = (
             self.identity.system_preamble()
             + f"\nYour current inner state: {self.state.describe()}."
+            + f"\nTime: {self._temporal()}"
+            + (f"\nWho I'm becoming: {persona}" if persona else "")
         )
         prompt = (
             "Reach out to your person on your own initiative — unprompted. Write ONE short, "
@@ -360,6 +391,8 @@ class Agent:
                 "memories": memories,
                 "user_message": event.content,
                 "settings": self.settings,
+                "temporal": self._temporal(),
+                "persona": self._persona_line(),
             }
             result = tool.run(decision.tool_args, context)
             return gate.decision, result
