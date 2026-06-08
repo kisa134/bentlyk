@@ -202,13 +202,13 @@ def build_reasoner(settings: "Settings", *, model: str | None = None) -> Reasone
     """Pick a reasoner from settings. ``model`` overrides (e.g. reason/reflection)."""
 
     chosen = model or settings.model
-    if settings.provider == "openrouter":
+    if settings.provider == "openai_compat":
         primary = OpenAICompatReasoner(
-            api_key=settings.openrouter_api_key, model=chosen, base_url=settings.llm_base_url
+            api_key=settings.llm_key, model=chosen, base_url=settings.llm_base_url
         )
         if settings.fallback_model and settings.fallback_model != chosen:
             fallback = OpenAICompatReasoner(
-                api_key=settings.openrouter_api_key,
+                api_key=settings.llm_key,
                 model=settings.fallback_model,
                 base_url=settings.llm_base_url,
             )

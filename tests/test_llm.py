@@ -11,15 +11,26 @@ from bentlyk.llm import (
 def test_provider_inference():
     assert Settings().provider == "mock"
     assert Settings(anthropic_api_key="x").provider == "anthropic"
-    assert Settings(openrouter_api_key="x").provider == "openrouter"
-    # OpenRouter wins when both are set (OpenAI-compatible path is preferred).
-    assert Settings(openrouter_api_key="x", anthropic_api_key="y").provider == "openrouter"
+    assert Settings(llm_api_key="x").provider == "openai_compat"
+    assert Settings(openrouter_api_key="x").provider == "openai_compat"  # back-compat alias
+    # An OpenAI-compatible key wins when both are set.
+    assert Settings(llm_api_key="x", anthropic_api_key="y").provider == "openai_compat"
 
 
-def test_build_reasoner_picks_openrouter():
-    s = Settings(openrouter_api_key="sk-or-test", model="anthropic/claude-3.5-sonnet")
+def test_build_reasoner_picks_openai_compat():
+    s = Settings(llm_api_key="wsk_test", model="anthropic/claude-sonnet-4.6")
     r = build_reasoner(s)
     assert isinstance(r, OpenAICompatReasoner)
+
+
+def test_wavespeed_key_autodetects_base_and_model(monkeypatch):
+    monkeypatch.setenv("BENTLYK_LLM_API_KEY", "wsk_live_demo")
+    monkeypatch.delenv("BENTLYK_LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("BENTLYK_MODEL", raising=False)
+    s = Settings.from_env()
+    assert s.llm_base_url == "https://llm.wavespeed.ai/v1"
+    assert s.model.startswith("anthropic/")
+    assert s.provider == "openai_compat"
 
 
 def test_build_reasoner_offline_default():

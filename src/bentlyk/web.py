@@ -24,7 +24,11 @@ def web_search(
     """Answer a query grounded in live web results via OpenRouter's web plugin."""
 
     if not api_key:
-        return "(no web access: OpenRouter key not set)"
+        return "(no web access: LLM key not set)"
+    if "openrouter" not in base_url:
+        # The web plugin is OpenRouter-specific; other gateways (e.g. WaveSpeed)
+        # don't expose it. Avoid faking current info.
+        return "(web search needs an OpenRouter key; not available on this provider)"
     body = json.dumps({
         "model": model,
         "max_tokens": 800,

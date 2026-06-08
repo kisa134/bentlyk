@@ -109,13 +109,13 @@ def _respond(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     settings = context.get("settings")
     for line in thoughts.splitlines():
         low = line.strip().lower()
-        if low.startswith("search:") and settings is not None and settings.openrouter_api_key:
+        if low.startswith("search:") and settings is not None and settings.llm_key:
             from ..web import web_search
 
             q = line.split(":", 1)[1].strip()
             if q:
                 found = web_search(
-                    q, api_key=settings.openrouter_api_key,
+                    q, api_key=settings.llm_key,
                     base_url=settings.llm_base_url, model=settings.model,
                 )
                 web_block = f"\n\nWHAT I FOUND ON THE WEB (use it, cite if relevant):\n{found[:1500]}"
@@ -179,12 +179,12 @@ def _web_search(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     query = str(args.get("query") or args.get("text") or "").strip()
     if not query:
         return ActionResult(ok=False, output="no query")
-    if settings is None or not settings.openrouter_api_key:
+    if settings is None or not settings.llm_key:
         return ActionResult(ok=False, output="no web access configured")
     from ..web import web_search
 
     result = web_search(
-        query, api_key=settings.openrouter_api_key,
+        query, api_key=settings.llm_key,
         base_url=settings.llm_base_url, model=settings.model,
     )
     store = context.get("store")
@@ -218,14 +218,14 @@ def _consult_model(args: dict[str, Any], context: dict[str, Any]) -> ActionResul
     question = str(args.get("question") or args.get("text") or "").strip()
     if not question:
         return ActionResult(ok=False, output="no question")
-    if settings is None or not settings.openrouter_api_key:
+    if settings is None or not settings.llm_key:
         return ActionResult(ok=False, output="no model access configured")
     from ..llm import OpenAICompatReasoner
 
     model = str(args.get("model") or settings.model)
     try:
         r = OpenAICompatReasoner(
-            api_key=settings.openrouter_api_key, model=model, base_url=settings.llm_base_url
+            api_key=settings.llm_key, model=model, base_url=settings.llm_base_url
         )
         ans = r.complete(
             system="Another AI being consults you for a candid second opinion. Be honest and brief.",

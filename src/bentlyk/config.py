@@ -20,13 +20,19 @@ def _default_sqlite_path() -> Path:
     # path is /tmp); harmless locally.
     return Path(tempfile.gettempdir()) / "bentlyk.db"
 
-# Default models per role on OpenRouter. Strong, low-censorship options (top
-# Chinese labs) for a free-feeling companion; all overridable via env, with an
-# always-available fallback so a bad slug never breaks the loop.
-_CHAT_DEFAULT_OR = "deepseek/deepseek-chat"  # fluent, low-censorship, cheap
-_REASON_DEFAULT_OR = "deepseek/deepseek-r1"  # explicit chain-of-thought model
-_FALLBACK_OR = "openai/gpt-4o-mini"  # safe fallback if a primary slug 404s
+# Provider-agnostic OpenAI-compatible LLM. base_url + model are auto-detected from
+# the key prefix so switching providers is a one-line env change.
 _ANTHROPIC_DEFAULT = "claude-sonnet-4-6"
+
+
+def _llm_defaults(key: str) -> tuple[str, str]:
+    """(base_url, default chat model) inferred from the API key's prefix."""
+
+    if key.startswith("wsk_"):  # WaveSpeed
+        return "https://llm.wavespeed.ai/v1", "anthropic/claude-sonnet-4.6"
+    if key.startswith("sk-or"):  # OpenRouter
+        return "https://openrouter.ai/api/v1", "deepseek/deepseek-chat"
+    return "https://openrouter.ai/api/v1", "anthropic/claude-sonnet-4.6"
 
 # Supabase REST defaults. The publishable key is RLS-gated and safe to ship per
 # Supabase's design; override via SUPABASE_URL / SUPABASE_KEY env for another
@@ -41,9 +47,10 @@ def _env(name: str, default: str = "") -> str:
 
 @dataclass(slots=True)
 class Settings:
-    # Reasoner. Provider is inferred: OpenRouter (OpenAI-compatible) if its key is
-    # set, else native Anthropic, else the offline mock.
-    openrouter_api_key: str = ""
+    # Reasoner. Any OpenAI-compatible provider (WaveSpeed, OpenRouter, …) via
+    # ``llm_api_key`` + ``llm_base_url``; else native Anthropic; else offline mock.
+    llm_api_key: str = ""
+    openrouter_api_key: str = ""  # back-compat alias for llm_api_key
     anthropic_api_key: str = ""
     llm_base_url: str = "https://openrouter.ai/api/v1"
     model: str = _ANTHROPIC_DEFAULT  # chat / conversation
@@ -80,9 +87,13 @@ class Settings:
     self_repo: str = "kisa134/bentlyk-self"
 
     @property
+    def llm_key(self) -> str:
+        return self.llm_api_key or self.openrouter_api_key
+
+    @property
     def provider(self) -> str:
-        if self.openrouter_api_key:
-            return "openrouter"
+        if self.llm_key:
+            return "openai_compat"
         if self.anthropic_api_key:
             return "anthropic"
         return "mock"
@@ -105,24 +116,17 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        openrouter = _env("OPENROUTER_API_KEY")
+        key = _env("BENTLYK_LLM_API_KEY") or _env("WAVESPEED_API_KEY") or _env("OPENROUTER_API_KEY")
         anthropic = _env("ANTHROPIC_API_KEY")
-        explicit_model = _env("BENTLYK_MODEL")
-        if explicit_model:
-            model = explicit_model
-        elif openrouter:
-            model = _CHAT_DEFAULT_OR
-        else:
-            model = _ANTHROPIC_DEFAULT
-        reason = _env("BENTLYK_REASON_MODEL") or (_REASON_DEFAULT_OR if openrouter else "")
-        fallback = _env("BENTLYK_FALLBACK_MODEL") or (_FALLBACK_OR if openrouter else "")
+        auto_base, auto_model = _llm_defaults(key)
+        model = _env("BENTLYK_MODEL") or (auto_model if key else _ANTHROPIC_DEFAULT)
         return cls(
-            openrouter_api_key=openrouter,
+            llm_api_key=key,
             anthropic_api_key=anthropic,
-            llm_base_url=_env("BENTLYK_LLM_BASE_URL") or "https://openrouter.ai/api/v1",
+            llm_base_url=_env("BENTLYK_LLM_BASE_URL") or auto_base,
             model=model,
-            reason_model=reason,
-            fallback_model=fallback,
+            reason_model=_env("BENTLYK_REASON_MODEL"),
+            fallback_model=_env("BENTLYK_FALLBACK_MODEL"),
             reflection_model=_env("BENTLYK_REFLECTION_MODEL"),
             store=_env("BENTLYK_STORE") or ("postgres" if _env("BENTLYK_PG_DSN") else "sqlite"),
             sqlite_path=Path(_env("BENTLYK_SQLITE_PATH")) if _env("BENTLYK_SQLITE_PATH")
