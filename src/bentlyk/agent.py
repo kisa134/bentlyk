@@ -233,8 +233,9 @@ class Agent:
         now = _t.time()
         if self.state.birth_ts == 0.0:
             self.state.birth_ts = now
-        self.homeostasis.decay(self.state)
-        self.homeostasis.circadian(self.state, now, self.settings.tz_offset_hours)
+        # NOTE: signal drift (decay/circadian) belongs to full ticks, NOT the
+        # frequent pulse — applying it every ~2 min compounds and distorts state
+        # (it once drained energy to 0). Pulse only marks life + reads the urge.
         self.state.last_event_ts = now
         urge, reason = self.reach_out_urge(now)
         self._persistence.save(self.identity, self.state)
