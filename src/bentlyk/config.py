@@ -41,6 +41,14 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
+def _clean(value: str) -> str:
+    """Strip stray wrappers a value can pick up when pasted into a hosting
+    dashboard (angle brackets, quotes, spaces), so a mangled env var — e.g.
+    ``<https://x.supabase.co>`` — can't break URL parsing."""
+
+    return value.strip().strip("<>").strip().strip('"').strip("'").strip()
+
+
 @dataclass(slots=True)
 class Settings:
     # Reasoner. Any OpenAI-compatible provider (WaveSpeed by default) via
@@ -141,8 +149,8 @@ class Settings:
             sqlite_path=Path(_env("BENTLYK_SQLITE_PATH")) if _env("BENTLYK_SQLITE_PATH")
             else _default_sqlite_path(),
             pg_dsn=_env("BENTLYK_PG_DSN"),
-            supabase_url=_env("SUPABASE_URL") or _SUPABASE_URL_DEFAULT,
-            supabase_key=_env("SUPABASE_KEY") or _SUPABASE_KEY_DEFAULT,
+            supabase_url=_clean(_env("SUPABASE_URL")) or _SUPABASE_URL_DEFAULT,
+            supabase_key=_clean(_env("SUPABASE_KEY")) or _SUPABASE_KEY_DEFAULT,
             max_autonomy=AutonomyMode.from_str(_env("BENTLYK_MAX_AUTONOMY") or "suggest"),
             identity=_env("BENTLYK_IDENTITY") or "default",
             proactive_interval_sec=int(_env("BENTLYK_PROACTIVE_INTERVAL_SEC") or "1800"),

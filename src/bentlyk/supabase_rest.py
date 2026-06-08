@@ -30,8 +30,12 @@ class SupabaseRest:
     """MemoryStore over the Supabase PostgREST API."""
 
     def __init__(self, url: str, key: str, timeout: float = 15.0) -> None:
+        # Defensive: a value pasted into a hosting dashboard can arrive wrapped in
+        # angle brackets/quotes/spaces (e.g. "<https://x.supabase.co>"), which makes
+        # urllib reject the scheme. Strip those so a mangled env can't break us.
+        url = url.strip().strip("<>").strip().strip('"').strip("'").strip()
         self._base = url.rstrip("/") + "/rest/v1"
-        self._key = key
+        self._key = key.strip().strip("<>").strip().strip('"').strip("'").strip()
         self._timeout = timeout
 
     # --- HTTP helper ----------------------------------------------------------
