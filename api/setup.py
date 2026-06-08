@@ -76,7 +76,7 @@ class handler(BaseHTTPRequestHandler):
                 continue
             try:
                 r = OpenAICompatReasoner(
-                    api_key=s.openrouter_api_key, model=model, base_url=s.llm_base_url
+                    api_key=s.llm_key, model=model, base_url=s.llm_base_url
                 )
                 reply = r.complete(system="healthcheck", prompt="say ok", max_tokens=8)
                 out[role] = {"model": model, "ok": True, "reply": (reply or "")[:30]}
