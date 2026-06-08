@@ -444,8 +444,12 @@ class Agent:
             "to use to actually do it. Prefer real action that builds or improves something — "
             "write or improve your own code (write_program), read your own source (read_code), "
             "search the web (web_search), consult another model (consult_model) — over only "
-            "thinking. Respond ONLY with JSON: {\"step\": <short>, \"tool\": <tool name or null>, "
-            "\"args\": {<tool args>}, \"done\": <true if the goal is now complete>}."
+            "thinking. When the step is to write code, you MUST set tool to \"write_program\" with "
+            "args {\"path\": <a file path in my repo, e.g. tools/memory_graph.py>, \"spec\": <what "
+            "the file should do, concretely>}. Always pick a real tool with COMPLETE args when the "
+            "step is an action; use null only for pure reflection. Respond ONLY with JSON: "
+            "{\"step\": <short>, \"tool\": <tool name or null>, \"args\": {<tool args>}, "
+            "\"done\": <true if the goal is now complete>}."
         )
         try:
             data = _extract_json(self.reasoner.complete(system=system, prompt=prompt, max_tokens=600)) or {}
@@ -467,6 +471,14 @@ class Agent:
             )
             ok = bool(res and res.ok) and gd == GateDecision.ALLOW
             self.homeostasis.settle(self.state, success=ok)
+            # Record the real outcome so I can see what worked, and learn from failures.
+            outcome = (res.output if res else "(not run)")[:240]
+            self.store.add(MemoryItem(
+                kind=MemoryKind.EPISODIC,
+                content=f"used {toolname} → {gd.name.lower()}: {outcome}",
+                tags=["self_work", "tool_result"] + (["success"] if ok else ["failure"]),
+                salience=0.5 if ok else 0.65,
+            ))
             line += f" | {toolname}:{gd.name.lower()}"
         if data.get("done"):
             goal.tags = [t for t in goal.tags if t != "active"] + ["done"]
