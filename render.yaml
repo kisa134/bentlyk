@@ -43,6 +43,13 @@ services:
         sync: false
       - key: BENTLYK_CODE_MODEL       # optional — override the coding model
         sync: false
+      # --- live semantic memory (embeddings on DeepInfra bge-m3) ---
+      - key: BENTLYK_EMBED_BASE_URL   # provider endpoint (not secret)
+        value: https://api.deepinfra.com/v1/openai
+      - key: BENTLYK_EMBED_MODEL      # multilingual embedding model (not secret)
+        value: BAAI/bge-m3
+      - key: BENTLYK_EMBED_KEY        # your DeepInfra API key — fill this in
+        sync: false
       # --- this is its OWN dedicated body: full freedom ---
       - key: BENTLYK_MAX_AUTONOMY     # top of the ladder: acts on its own, incl. running code
         value: escalated_act
