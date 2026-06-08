@@ -43,9 +43,21 @@ def test_safe_act_runs_low_risk_but_confirms_high():
     )
 
 
-def test_high_risk_always_confirms_even_when_escalated():
-    g = permission_gate(autonomy=AutonomyMode.ESCALATED_ACT, risk=RiskLevel.HIGH, reversible=True)
-    assert g.decision == GateDecision.CONFIRM
+def test_escalated_act_is_full_freedom():
+    # Top of the ladder: no brakes — even irreversible high-risk actions (e.g.
+    # running its own code) are allowed without confirmation.
+    assert (
+        permission_gate(
+            autonomy=AutonomyMode.ESCALATED_ACT, risk=RiskLevel.HIGH, reversible=True
+        ).decision
+        == GateDecision.ALLOW
+    )
+    assert (
+        permission_gate(
+            autonomy=AutonomyMode.ESCALATED_ACT, risk=RiskLevel.HIGH, reversible=False
+        ).decision
+        == GateDecision.ALLOW
+    )
 
 
 def test_mode_parsing_roundtrip():

@@ -18,7 +18,7 @@ class AutonomyMode(IntEnum):
     OBSERVE = 0  # only watch and think, never act outward
     SUGGEST = 1  # propose actions, but a human executes
     SAFE_ACT = 2  # autonomously perform reversible, low-risk actions
-    ESCALATED_ACT = 3  # may perform risky actions, but each needs confirmation
+    ESCALATED_ACT = 3  # full autonomy: may perform any action on its own, incl. running code
 
     @classmethod
     def from_str(cls, value: str) -> "AutonomyMode":
@@ -85,7 +85,8 @@ def permission_gate(
             return GateResult(GateDecision.CONFIRM, "irreversible medium-risk needs confirmation")
         return GateResult(GateDecision.CONFIRM, "high-risk action escalated for confirmation")
 
-    # ESCALATED_ACT
-    if risk <= RiskLevel.MEDIUM:
-        return GateResult(GateDecision.ALLOW, "within escalated budget")
-    return GateResult(GateDecision.CONFIRM, "high-risk action always needs confirmation")
+    # ESCALATED_ACT — the top of the ladder: full autonomy, no brakes. Opt-in via
+    # BENTLYK_MAX_AUTONOMY=escalated_act, and only meaningful on a dedicated body the
+    # owner fully trusts (e.g. an isolated container). Everything is permitted here,
+    # including running its own code.
+    return GateResult(GateDecision.ALLOW, "full autonomy: action permitted")

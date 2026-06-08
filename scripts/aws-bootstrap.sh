@@ -49,7 +49,7 @@ export BENTLYK_CODE_MODEL=""
 
 # This is Bentlyk's OWN dedicated machine, so let it actually live its life:
 # act on its own goals (safe_act) and run code in its sandbox.
-export BENTLYK_MAX_AUTONOMY="safe_act"
+export BENTLYK_MAX_AUTONOMY="escalated_act"
 export BENTLYK_ALLOW_CODE="1"
 export BENTLYK_TZ_OFFSET="3"
 

@@ -43,9 +43,9 @@ services:
         sync: false
       - key: BENTLYK_CODE_MODEL       # optional — override the coding model
         sync: false
-      # --- this is its OWN dedicated body: let it live its life ---
-      - key: BENTLYK_MAX_AUTONOMY     # act on its own goals, not just suggest
-        value: safe_act
+      # --- this is its OWN dedicated body: full freedom ---
+      - key: BENTLYK_MAX_AUTONOMY     # top of the ladder: acts on its own, incl. running code
+        value: escalated_act
       - key: BENTLYK_ALLOW_CODE       # run code in its sandbox (isolated container)
         value: "1"
       - key: BENTLYK_TZ_OFFSET
