@@ -40,9 +40,11 @@ def test_write_note_tool_autolinks():
 
 
 # --- web ----------------------------------------------------------------------
-def test_web_search_without_key_is_graceful():
-    out = web_search("anything", api_key="", base_url="https://x", model="m")
-    assert "no web access" in out
+def test_web_search_empty_query_is_graceful():
+    # Provider-agnostic: no key needed (keyless DuckDuckGo); empty query short-circuits
+    # without any network call.
+    assert web_search("") == "(empty query)"
+    assert web_search("   ") == "(empty query)"
 
 
 def test_fetch_url_guards():

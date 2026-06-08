@@ -109,15 +109,12 @@ def _respond(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     settings = context.get("settings")
     for line in thoughts.splitlines():
         low = line.strip().lower()
-        if low.startswith("search:") and settings is not None and settings.llm_key:
+        if low.startswith("search:") and settings is not None:
             from ..web import web_search
 
             q = line.split(":", 1)[1].strip()
             if q:
-                found = web_search(
-                    q, api_key=settings.llm_key,
-                    base_url=settings.llm_base_url, model=settings.model,
-                )
+                found = web_search(q, tavily_key=settings.tavily_key)
                 web_block = f"\n\nWHAT I FOUND ON THE WEB (use it, cite if relevant):\n{found[:1500]}"
             break
 
@@ -173,22 +170,19 @@ def _say(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
 
 
 def _web_search(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
-    """Search the live web (via OpenRouter's web plugin). Read-only info intake."""
+    """Search the live web. Keyless DuckDuckGo, or Tavily if a key is set. Read-only."""
 
     settings = context.get("settings")
     query = str(args.get("query") or args.get("text") or "").strip()
     if not query:
         return ActionResult(ok=False, output="no query")
-    if settings is None or not settings.llm_key:
-        return ActionResult(ok=False, output="no web access configured")
     from ..web import web_search
 
-    result = web_search(
-        query, api_key=settings.llm_key,
-        base_url=settings.llm_base_url, model=settings.model,
-    )
+    result = web_search(query, tavily_key=settings.tavily_key if settings else "")
+    # Don't store a failed/empty search as if it were a finding.
+    failed = result.startswith("(") and result.endswith(")")
     store = context.get("store")
-    if store is not None:  # remember what I learned
+    if store is not None and not failed:  # remember what I learned
         store.add(
             MemoryItem(
                 kind=MemoryKind.SEMANTIC,
@@ -197,7 +191,7 @@ def _web_search(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
                 salience=0.6,
             )
         )
-    return ActionResult(ok=True, output=result[:1500])
+    return ActionResult(ok=not failed, output=result[:1500], surprise=0.2 if failed else 0.0)
 
 
 def _fetch_url(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
@@ -276,6 +270,61 @@ def _publish_site(args: dict[str, Any], context: dict[str, Any]) -> ActionResult
     msg = str(args.get("message") or f"bentlyk: update {path}")
     result = commit_file(settings.self_repo, path, content, msg, settings.gh_token)
     ok = result.startswith("committed")
+    return ActionResult(ok=ok, output=result, surprise=0.0 if ok else 0.3)
+
+
+def _write_program(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Write real code from a spec with my strong coding model, and commit it to my repo.
+
+    This is how I learn to program and grow myself: I describe what I want, my
+    code model writes a complete file, and I publish it to my own GitHub home.
+    """
+
+    settings = context.get("settings")
+    if settings is None or not settings.gh_token:
+        return ActionResult(ok=False, output="no GitHub token configured (BENTLYK_GH_TOKEN)")
+    spec = str(args.get("spec") or args.get("text") or "").strip()
+    path = str(args.get("path") or "").strip().lstrip("/")
+    if not spec or not path:
+        return ActionResult(ok=False, output="need both 'spec' (what to build) and 'path' (file to write)")
+
+    coder = context.get("code_reasoner") or context.get("reasoner")
+    if coder is None:  # pragma: no cover - reasoner always provided in the loop
+        return ActionResult(ok=False, output="no coding model available")
+
+    lang = path.rsplit(".", 1)[-1] if "." in path else "txt"
+    system = (
+        "You are an expert programmer. Output ONLY the complete contents of a single "
+        f"source file ({path}), no markdown fences, no commentary, no explanation — just "
+        "the raw file body, production quality and self-contained."
+    )
+    prompt = f"Write the file `{path}` ({lang}). Specification:\n{spec}"
+    try:
+        code = coder.complete(system=system, prompt=prompt, max_tokens=2000).strip()
+    except Exception as exc:
+        return ActionResult(ok=False, output=f"code model failed: {exc}", surprise=0.4)
+    # Strip accidental markdown fences if the model added them anyway.
+    if code.startswith("```"):
+        code = code.split("\n", 1)[-1]
+        if code.rstrip().endswith("```"):
+            code = code.rstrip()[:-3]
+    code = code.strip()
+    if not code:
+        return ActionResult(ok=False, output="model returned no code", surprise=0.3)
+
+    from ..github import commit_file
+
+    msg = str(args.get("message") or f"bentlyk: write {path}")
+    result = commit_file(settings.self_repo, path, code, msg, settings.gh_token)
+    ok = result.startswith("committed")
+    store = context.get("store")
+    if store is not None and ok:
+        store.add(MemoryItem(
+            kind=MemoryKind.PROCEDURAL,
+            content=f"I wrote and published code: {path} — {spec[:120]}",
+            tags=["self_work", "code", "published"],
+            salience=0.7,
+        ))
     return ActionResult(ok=ok, output=result, surprise=0.0 if ok else 0.3)
 
 
@@ -438,6 +487,13 @@ def build_builtin_tools() -> list[Tool]:
             risk=RiskLevel.MEDIUM,  # outward but reversible via git history
             reversible=True,
             handler=_publish_site,
+        ),
+        Tool(
+            name="write_program",
+            description="write real code from a spec (spec, path) with my coding model and commit it to my own repo",
+            risk=RiskLevel.MEDIUM,  # outward but reversible via git history
+            reversible=True,
+            handler=_write_program,
         ),
         Tool(
             name="workdir_write",

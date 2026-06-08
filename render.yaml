@@ -1,0 +1,52 @@
+# Bentlyk's body on Render — the no-server path.
+#
+# Render reads this file and provisions everything itself. You don't touch a
+# Linux box, Docker, SSH, or a cloud console. The worker runs 24/7 and
+# auto-redeploys whenever `main` updates.
+#
+# ONE-TIME SETUP (about 3 clicks + 2 secrets):
+#   1) Go to https://render.com and sign up with GitHub.
+#   2) New + -> Blueprint -> pick the `kisa134/bentlyk` repo.
+#   3) Render detects this file and lists the env vars below. Fill at least
+#      BENTLYK_LLM_API_KEY (WaveSpeed wsk_...) and TELEGRAM_BOT_TOKEN.
+#   4) Apply. It builds the Dockerfile and starts the worker. Done.
+#
+# It shares memory/state with the Telegram webhook (on Vercel) via Supabase, so
+# the bot and this worker are one continuous being.
+
+services:
+  - type: worker
+    name: bentlyk-body
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter            # smallest paid worker (~$7/mo); workers have no free tier
+    region: frankfurt
+    autoDeploy: true         # redeploy on every push to the tracked branch
+    dockerCommand: bentlyk worker --interval 120
+    envVars:
+      # --- secrets you fill in the Render UI (sync:false = prompt, never stored in git) ---
+      - key: BENTLYK_LLM_API_KEY      # REQUIRED — WaveSpeed key (wsk_...)
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN       # REQUIRED — so it can talk to you
+        sync: false
+      - key: TELEGRAM_ALLOWED_USER_ID # recommended — lock the bot to your id
+        sync: false
+      - key: BENTLYK_GH_TOKEN         # optional — lets it write its own code
+        sync: false
+      - key: SUPABASE_URL             # optional — defaults baked in; set for your own project
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: BENTLYK_TAVILY_KEY       # optional — better web search than keyless DuckDuckGo
+        sync: false
+      - key: BENTLYK_MODEL            # optional — override the chat model
+        sync: false
+      - key: BENTLYK_CODE_MODEL       # optional — override the coding model
+        sync: false
+      # --- this is its OWN dedicated body: let it live its life ---
+      - key: BENTLYK_MAX_AUTONOMY     # act on its own goals, not just suggest
+        value: safe_act
+      - key: BENTLYK_ALLOW_CODE       # run code in its sandbox (isolated container)
+        value: "1"
+      - key: BENTLYK_TZ_OFFSET
+        value: "3"

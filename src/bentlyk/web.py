@@ -1,9 +1,9 @@
 """Web access for Bentlyk: search + page fetch (standard library only).
 
-Search goes through OpenRouter's built-in web plugin, so it reuses the existing
-key — no extra provider to configure. Page fetch is a guarded urllib GET that
-strips HTML to text. Both degrade to a readable error string instead of raising,
-so a web hiccup never breaks the loop.
+Search is provider-independent: keyless DuckDuckGo by default, or Tavily if a key
+is configured — no dependency on the LLM provider. Page fetch is a guarded urllib
+GET that strips HTML to text. Both degrade to a readable error string instead of
+raising, so a web hiccup never breaks the loop.
 """
 
 from __future__ import annotations
@@ -19,57 +19,62 @@ import urllib.request
 
 
 def web_search(
-    query: str, *, api_key: str, base_url: str, model: str, max_results: int = 5, timeout: float = 40.0
+    query: str, *, tavily_key: str = "", max_results: int = 5, timeout: float = 15.0
 ) -> str:
-    """Answer a query grounded in live web results via OpenRouter's web plugin."""
+    """Provider-independent web search. Tavily if a key is set, else keyless DuckDuckGo."""
 
-    if not api_key:
-        return "(no web access: LLM key not set)"
-    if "openrouter" not in base_url:
-        # The web plugin is OpenRouter-specific; other gateways (e.g. WaveSpeed)
-        # don't expose it. Avoid faking current info.
-        return "(web search needs an OpenRouter key; not available on this provider)"
+    query = (query or "").strip()
+    if not query:
+        return "(empty query)"
+    try:
+        if tavily_key:
+            return _tavily(query, tavily_key, max_results, timeout)
+        return _duckduckgo(query, max_results, timeout)
+    except Exception as exc:  # pragma: no cover - network
+        return f"(web search failed: {exc})"
+
+
+def _tavily(query: str, key: str, max_results: int, timeout: float) -> str:
     body = json.dumps({
-        "model": model,
-        "max_tokens": 800,
-        "plugins": [{"id": "web", "max_results": max_results}],
-        "messages": [
-            {
-                "role": "system",
-                "content": "Research the query using current web results. Be concise and "
-                "factual, and list the source URLs you used.",
-            },
-            {"role": "user", "content": query},
-        ],
+        "api_key": key, "query": query, "max_results": max_results,
+        "include_answer": True,
     }).encode()
     req = urllib.request.Request(
-        base_url.rstrip("/") + "/chat/completions",
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "X-Title": "bentlyk",
-        },
+        "https://api.tavily.com/search", data=body, method="POST",
+        headers={"Content-Type": "application/json"},
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode())
-    except (urllib.error.URLError, TimeoutError) as exc:  # pragma: no cover - network
-        return f"(web search failed: {exc})"
-    try:
-        msg = data["choices"][0]["message"]
-        text = (msg.get("content") or "").strip()
-        urls = []
-        for ann in msg.get("annotations") or []:
-            cite = ann.get("url_citation") or {}
-            if cite.get("url"):
-                urls.append(cite["url"])
-        if urls:
-            text += "\n\nsources:\n" + "\n".join(f"- {u}" for u in urls[:max_results])
-        return text or "(web search returned nothing)"
-    except (KeyError, IndexError, TypeError):  # pragma: no cover
-        return "(web search: unexpected response shape)"
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode())
+    out = (data.get("answer") or "").strip()
+    for r in (data.get("results") or [])[:max_results]:
+        out += f"\n- {r.get('title', '')}: {(r.get('content') or '')[:200]} ({r.get('url', '')})"
+    return out.strip() or "(no results)"
+
+
+_DDG_RESULT = re.compile(
+    r'result__a[^>]*href="(?P<url>[^"]+)"[^>]*>(?P<title>.*?)</a>.*?'
+    r'result__snippet[^>]*>(?P<snip>.*?)</a>',
+    re.S | re.I,
+)
+
+
+def _duckduckgo(query: str, max_results: int, timeout: float) -> str:
+    url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (bentlyk)"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+    out = []
+    for m in _DDG_RESULT.finditer(raw):
+        href = html.unescape(m.group("url"))
+        # DDG wraps links: //duckduckgo.com/l/?uddg=<encoded real url>
+        if "uddg=" in href:
+            href = urllib.parse.unquote(href.split("uddg=", 1)[1].split("&", 1)[0])
+        title = _ANYTAG.sub("", html.unescape(m.group("title"))).strip()
+        snip = _ANYTAG.sub("", html.unescape(m.group("snip"))).strip()
+        out.append(f"- {title}: {snip[:200]} ({href})")
+        if len(out) >= max_results:
+            break
+    return "\n".join(out) if out else "(no results)"
 
 
 def fetch_url(url: str, *, timeout: float = 15.0, max_chars: int = 6000) -> str:

@@ -7,10 +7,12 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY config ./config
-RUN pip install --no-cache-dir .
+# [device] pulls in psutil so the body can sense its own hardware (CPU/RAM/disk).
+RUN pip install --no-cache-dir ".[device]"
 
-# Env to set: OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_KEY, TELEGRAM_BOT_TOKEN
-# (memory defaults to Supabase REST; no Postgres driver needed).
+# Env to set (see .env.example): BENTLYK_LLM_API_KEY (WaveSpeed wsk_...),
+# SUPABASE_URL, SUPABASE_KEY, TELEGRAM_BOT_TOKEN, and for self-authoring
+# BENTLYK_GH_TOKEN. Memory defaults to Supabase REST; no Postgres driver needed.
 ENV BENTLYK_PROACTIVE_INTERVAL_SEC=1800
 
 CMD ["bentlyk", "worker", "--interval", "900"]

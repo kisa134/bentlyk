@@ -92,6 +92,9 @@ class Agent:
         self.reason_reasoner = build_reasoner(
             self.settings, model=self.settings.effective_reason_model
         )  # deep chain-of-thought
+        self.code_reasoner = build_reasoner(
+            self.settings, model=self.settings.effective_code_model
+        )  # strong coder for self-programming
         self.planner = Planner(self.reasoner, self.registry)
         reflection_reasoner = build_reasoner(
             self.settings, model=self.settings.effective_reflection_model
@@ -507,6 +510,7 @@ class Agent:
                 "identity": self.identity,
                 "reasoner": self.reasoner,
                 "reason_reasoner": self.reason_reasoner,
+                "code_reasoner": self.code_reasoner,
                 "memories": memories,
                 "user_message": event.content,
                 "settings": self.settings,

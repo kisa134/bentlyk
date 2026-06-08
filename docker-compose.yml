@@ -1,0 +1,26 @@
+# Bentlyk's body as a long-running service. One command brings the entity up and
+# keeps it up (restart unless-stopped), sharing memory/state with the Telegram
+# webhook via Supabase — one continuous being.
+#
+#   docker compose up -d --build      # start (or apply new code)
+#   docker compose logs -f            # watch it live
+#   docker compose down               # stop
+#
+# Secrets/config come from a sibling .env file (see .env.example).
+
+services:
+  bentlyk:
+    build: .
+    image: bentlyk-body
+    container_name: bentlyk
+    restart: unless-stopped
+    env_file: .env
+    # The metabolism pulse: every ~2 min it feels its state/urge; richer self-work
+    # (pursuing its own goals) runs on a slower multiple inside the loop.
+    command: ["bentlyk", "worker", "--interval", "120"]
+    volumes:
+      # Persist the sandbox workdir + any local sqlite across restarts/rebuilds.
+      - bentlyk-home:/root/.bentlyk
+
+volumes:
+  bentlyk-home:

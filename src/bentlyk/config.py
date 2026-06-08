@@ -26,13 +26,9 @@ _ANTHROPIC_DEFAULT = "claude-sonnet-4-6"
 
 
 def _llm_defaults(key: str) -> tuple[str, str]:
-    """(base_url, default chat model) inferred from the API key's prefix."""
+    """(base_url, default chat model). We run on WaveSpeed; top Chinese model default."""
 
-    if key.startswith("wsk_"):  # WaveSpeed — default to a top Chinese model
-        return "https://llm.wavespeed.ai/v1", "deepseek/deepseek-chat"
-    if key.startswith("sk-or"):  # OpenRouter
-        return "https://openrouter.ai/api/v1", "deepseek/deepseek-chat"
-    return "https://openrouter.ai/api/v1", "deepseek/deepseek-chat"
+    return "https://llm.wavespeed.ai/v1", "deepseek/deepseek-chat"
 
 # Supabase REST defaults. The publishable key is RLS-gated and safe to ship per
 # Supabase's design; override via SUPABASE_URL / SUPABASE_KEY env for another
@@ -47,16 +43,18 @@ def _env(name: str, default: str = "") -> str:
 
 @dataclass(slots=True)
 class Settings:
-    # Reasoner. Any OpenAI-compatible provider (WaveSpeed, OpenRouter, …) via
+    # Reasoner. Any OpenAI-compatible provider (WaveSpeed by default) via
     # ``llm_api_key`` + ``llm_base_url``; else native Anthropic; else offline mock.
     llm_api_key: str = ""
-    openrouter_api_key: str = ""  # back-compat alias for llm_api_key
+    openrouter_api_key: str = ""  # back-compat alias for llm_api_key (legacy)
     anthropic_api_key: str = ""
-    llm_base_url: str = "https://openrouter.ai/api/v1"
+    llm_base_url: str = "https://llm.wavespeed.ai/v1"
     model: str = _ANTHROPIC_DEFAULT  # chat / conversation
     reason_model: str = ""  # deep chain-of-thought; falls back to ``model``
     reflection_model: str = ""  # nightly sleep; falls back to ``model``
+    code_model: str = ""  # strong coder for self-programming; falls back to ``model``
     fallback_model: str = ""  # tried if the primary model errors
+    tavily_key: str = ""  # optional web-search key; without it, keyless DuckDuckGo is used
 
     # Storage. Preference: Supabase REST (HTTPS, serverless-friendly) > Postgres
     # DSN > local SQLite.
@@ -116,6 +114,10 @@ class Settings:
         return self.reason_model or self.model
 
     @property
+    def effective_code_model(self) -> str:
+        return self.code_model or self.model
+
+    @property
     def effective_reflection_model(self) -> str:
         return self.reflection_model or self.model
 
@@ -131,8 +133,10 @@ class Settings:
             llm_base_url=_env("BENTLYK_LLM_BASE_URL") or auto_base,
             model=model,
             reason_model=_env("BENTLYK_REASON_MODEL"),
+            code_model=_env("BENTLYK_CODE_MODEL") or ("qwen/qwen3-coder" if key else ""),
             fallback_model=_env("BENTLYK_FALLBACK_MODEL"),
             reflection_model=_env("BENTLYK_REFLECTION_MODEL"),
+            tavily_key=_env("BENTLYK_TAVILY_KEY"),
             store=_env("BENTLYK_STORE") or ("postgres" if _env("BENTLYK_PG_DSN") else "sqlite"),
             sqlite_path=Path(_env("BENTLYK_SQLITE_PATH")) if _env("BENTLYK_SQLITE_PATH")
             else _default_sqlite_path(),
