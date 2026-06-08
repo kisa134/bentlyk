@@ -77,9 +77,15 @@ class handler(BaseHTTPRequestHandler):
         counts = " · ".join(f"{k.value}: {len(agent.store.all(k))}" for k in MemoryKind)
         persona = agent._persona_line()
 
+        goals = agent.active_goals()
+        self_work = [m for m in episodes if "self_work" in m.tags]
+
         sections = [
             banner,
             _card("Кем я становлюсь", f'<div class="persona">{html.escape(persona) or "формируется…"}</div>'),
+            _card("Его цели и проекты (своя жизнь)",
+                  _timeline(goals) if goals else "<p class='muted'>ещё не поставил</p>"),
+            _card("Что он делает по своим целям", _timeline(self_work)),
             _card("Витальные сигналы", "".join(_bar(s, getattr(st, s)) for s in _SIGNALS)
                   + f'<div class="meta">тиков: {st.tick_count} · возраст: {_human_span(now - st.birth_ts) if st.birth_ts else "?"}</div>'),
             urge_card,

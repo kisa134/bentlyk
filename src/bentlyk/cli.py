@@ -175,9 +175,9 @@ def run_worker(agent: Agent, interval: float) -> int:
                 if msg:
                     tg_send(token, owner, msg)
                     line += " | reached out"
-            # Occasionally let it think a full autonomous cycle (a real thought).
+            # Periodically live its own life: pursue a self-set goal with its tools.
             if beat % 10 == 0:
-                line += f" | thought: {agent.tick(timer(source='worker')).headline()}"
+                line += f" | {agent.pursue()}"
             print(f"  · {line}")
             time.sleep(max(5.0, interval))
     except KeyboardInterrupt:

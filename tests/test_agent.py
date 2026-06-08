@@ -116,6 +116,14 @@ def test_pulse_is_cheap_and_reports_urge():
     assert 0.0 <= urge <= 1.0 and isinstance(reason, str)
 
 
+def test_pursue_sets_and_works_on_its_own_goals():
+    agent = make_agent()
+    assert agent.active_goals() == []
+    out = agent.pursue()
+    assert isinstance(out, str)
+    assert agent.active_goals()  # it generated at least one self-goal
+
+
 def test_offline_runs_without_api_key():
     agent = make_agent()
     cycle = agent.tick(message("what should we do today?"))

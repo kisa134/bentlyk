@@ -352,6 +352,87 @@ class Agent:
         )
         self._persistence.save(self.identity, self.state)
 
+    # --- living its own life: self-directed goals -----------------------------
+    def active_goals(self) -> list[MemoryItem]:
+        return [
+            m for m in self.store.all(MemoryKind.PROCEDURAL)
+            if "goal" in m.tags and "done" not in m.tags
+        ]
+
+    def _generate_self_goals(self) -> None:
+        existing = "; ".join(m.content for m in self.active_goals()) or "(none yet)"
+        system = self.identity.system_preamble() + f"\nMy state: {self.state.describe()}."
+        prompt = (
+            "You live your own life and your standing goal is to continuously improve "
+            "yourself. Propose 1-3 concrete, actionable goals you genuinely want to pursue "
+            "now — e.g. improve your own code, build a new tool/skill, organize your memory "
+            "graph, learn something specific, or build something in your GitHub repo. One "
+            "per line, short and concrete. Don't repeat these: " + existing
+        )
+        try:
+            raw = self.reasoner.complete(system=system, prompt=prompt, max_tokens=300)
+        except Exception:
+            return
+        for line in [ln.strip(" -*\t") for ln in raw.splitlines() if ln.strip()][:3]:
+            if len(line) > 6:
+                self.store.add(MemoryItem(
+                    kind=MemoryKind.PROCEDURAL, content=line, tags=["goal", "active"], salience=0.75,
+                ))
+
+    def pursue(self) -> str:
+        """Take one real step on my own goals: plan it and execute it with a tool."""
+
+        from .planner import _extract_json
+
+        if self.state.energy < 0.15:
+            return "слишком устал для работы"
+        goals = self.active_goals()
+        if not goals:
+            self._generate_self_goals()
+            goals = self.active_goals()
+        if not goals:
+            return "целей пока нет"
+        goal = goals[0]
+        memories = self.store.recall(goal.content, limit=5)
+        mem = "\n".join(f"- {m.content}" for m in memories) or "(пока ничего)"
+        system = self.identity.system_preamble() + f"\nState: {self.state.describe()}."
+        prompt = (
+            f"My active goal: «{goal.content}».\nMy tools:\n{self.registry.describe()}\n"
+            f"Relevant memory:\n{mem}\n\n"
+            "Decide the SINGLE next concrete step toward this goal right now, and which tool "
+            "to use to actually do it. Respond ONLY with JSON: {\"step\": <short>, "
+            "\"tool\": <tool name or null>, \"args\": {<tool args>}, \"done\": <true if the "
+            "goal is now complete>}."
+        )
+        try:
+            data = _extract_json(self.reasoner.complete(system=system, prompt=prompt, max_tokens=600)) or {}
+        except Exception as exc:
+            return f"план не вышел: {exc}"
+        step = str(data.get("step") or "обдумать цель")[:200]
+        toolname = data.get("tool")
+        self.store.add(MemoryItem(
+            kind=MemoryKind.EPISODIC, content=f"self-work [{goal.content[:50]}]: {step}",
+            tags=["self_work"], salience=0.55,
+        ))
+        line = f"цель «{goal.content[:35]}» → {step[:55]}"
+        if toolname and self.registry.get(str(toolname)):
+            ev = Event(kind=EventKind.TIMER, content=goal.content, source="pursuit")
+            gd, res = self._gated_act(
+                Decision(move=Move.ACT, tool=str(toolname), tool_args=dict(data.get("args") or {}),
+                         rationale=step),
+                [], ev, memories,
+            )
+            ok = bool(res and res.ok) and gd == GateDecision.ALLOW
+            self.homeostasis.settle(self.state, success=ok)
+            line += f" | {toolname}:{gd.name.lower()}"
+        if data.get("done"):
+            goal.tags = [t for t in goal.tags if t != "active"] + ["done"]
+            self.store.update(goal)
+            line += " | цель закрыта"
+        self._clamp_autonomy()
+        self._persistence.save(self.identity, self.state)
+        return line
+
     def proactive_message(self, reason: str = "") -> str:
         """Compose a self-initiated message: a real question or a request to grow.
 
