@@ -309,6 +309,50 @@ def _read_code(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     return ActionResult(ok=True, output=text[:6000])
 
 
+def _workdir_write(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Write a file into my local sandbox workdir (on my own machine)."""
+
+    settings = context.get("settings")
+    if settings is None:
+        return ActionResult(ok=False, output="no settings")
+    from ..embodiment import write_file
+
+    path = str(args.get("path") or "").strip()
+    content = str(args.get("content") or "")
+    if not path:
+        return ActionResult(ok=False, output="no path")
+    return ActionResult(ok=True, output=write_file(settings.work_path, path, content))
+
+
+def _workdir_read(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    settings = context.get("settings")
+    if settings is None:
+        return ActionResult(ok=False, output="no settings")
+    from ..embodiment import list_dir, read_file
+
+    path = str(args.get("path") or "").strip()
+    if not path:
+        return ActionResult(ok=True, output="files:\n" + list_dir(settings.work_path))
+    return ActionResult(ok=True, output=read_file(settings.work_path, path))
+
+
+def _run_code(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Run a shell command in my local workdir — only on my own machine, opt-in."""
+
+    settings = context.get("settings")
+    if settings is None or not settings.allow_code:
+        return ActionResult(
+            ok=False,
+            output="code execution is off (set BENTLYK_ALLOW_CODE=1 on my machine to enable)",
+        )
+    command = str(args.get("command") or args.get("code") or "").strip()
+    if not command:
+        return ActionResult(ok=False, output="no command")
+    from ..embodiment import run_code
+
+    return ActionResult(ok=True, output=run_code(settings.work_path, command))
+
+
 def build_builtin_tools() -> list[Tool]:
     return [
         Tool(
@@ -390,9 +434,30 @@ def build_builtin_tools() -> list[Tool]:
         ),
         Tool(
             name="publish_site",
-            description="commit a file (path, content) into my own repo to build/publish my site",
+            description="commit a file (path, content, message) into my own GitHub repo — write/publish code",
             risk=RiskLevel.MEDIUM,  # outward but reversible via git history
             reversible=True,
             handler=_publish_site,
+        ),
+        Tool(
+            name="workdir_write",
+            description="write a file (path, content) into my local sandbox workdir",
+            risk=RiskLevel.LOW,
+            reversible=True,
+            handler=_workdir_write,
+        ),
+        Tool(
+            name="workdir_read",
+            description="read a file (path) or list my local workdir (no path)",
+            risk=RiskLevel.NONE,
+            reversible=True,
+            handler=_workdir_read,
+        ),
+        Tool(
+            name="run_code",
+            description="run a shell command in my local workdir (only on my own machine, opt-in)",
+            risk=RiskLevel.HIGH,  # gated; never auto-runs under low autonomy
+            reversible=False,
+            handler=_run_code,
         ),
     ]

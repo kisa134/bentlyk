@@ -13,3 +13,6 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .DS_Store
+
+# generated diagram artifacts
+*_scheme.png

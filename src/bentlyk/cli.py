@@ -135,6 +135,7 @@ def run_worker(agent: Agent, interval: float) -> int:
 
     import time
 
+    from .embodiment import battery_fraction, sense_events
     from .serverless import owner_id, tg_send
 
     agent.boot()
@@ -146,7 +147,15 @@ def run_worker(agent: Agent, interval: float) -> int:
             beat += 1
             # Cheap metabolism every beat: feel state + urge (no LLM).
             urge, reason = agent.pulse()
-            line = f"urge={urge:.2f} ({reason})"
+            # Body: real battery becomes real energy.
+            bf = battery_fraction()
+            if bf is not None:
+                agent.state.energy = bf
+            line = f"urge={urge:.2f} ({reason})" + (f" | battery {int(bf * 100)}%" if bf else "")
+            # Perceive the body now and then (temperature/battery as events).
+            if beat % 5 == 0:
+                for ev in sense_events():
+                    agent.tick(ev)
             owner = owner_id(agent)
             if owner and token:
                 msg = agent.maybe_reach_out()  # LLM only if the urge fires
