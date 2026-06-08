@@ -153,6 +153,9 @@ def run_worker(agent: Agent, interval: float) -> int:
         tags=["body", "awake", "inventory"], salience=0.75,
     ))
     token = agent.settings.telegram_bot_token
+    # How often it takes a real step on its own goals (self-development). Time-based so
+    # it survives restarts; ~6 min keeps it working on itself without burning tokens.
+    PURSUE_EVERY_SEC = 360.0
     print(f"bentlyk worker: pulse every {interval:.0f}s (Ctrl-C to stop)")
     beat = 0
     try:
@@ -175,8 +178,10 @@ def run_worker(agent: Agent, interval: float) -> int:
                 if msg:
                     tg_send(token, owner, msg)
                     line += " | reached out"
-            # Periodically live its own life: pursue a self-set goal with its tools.
-            if beat % 10 == 0:
+            # Live its own life: take a step on its own goals with its tools. Time-based
+            # (not a beat counter) so the self-development loop survives restarts and fires
+            # right after boot instead of only every Nth beat.
+            if time.time() - agent.state.last_pursue_ts >= PURSUE_EVERY_SEC:
                 line += f" | {agent.pursue()}"
             print(f"  · {line}")
             time.sleep(max(5.0, interval))

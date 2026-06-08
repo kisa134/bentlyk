@@ -79,11 +79,13 @@ def _respond(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     mood = state.describe() if state else ""
     temporal = context.get("temporal") or ""
     persona = context.get("persona") or ""
+    focus = context.get("focus") or ""
     system = (
         preamble
         + f"\nYour current internal state — let it subtly color your tone, never name it: {mood}."
         + (f"\nTime sense (let it color you, don't recite it): {temporal}" if temporal else "")
         + (f"\nWho I'm becoming (my evolving self): {persona}" if persona else "")
+        + (f"\nWhere my attention is right now: {focus}" if focus else "")
     )
 
     if reasoner is None:  # pragma: no cover - reasoner always provided in the loop
@@ -157,6 +159,31 @@ def _respond(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
             )
         )
     return ActionResult(ok=True, output=reply[:150])
+
+
+def _focus(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Direct my own inner attention: narrow onto something, shift it, or release it.
+
+    Metacognitive control of attention — I choose what to hold in focus (a goal, a
+    thought, a state) and how tightly, or let go and let my mind wander.
+    """
+
+    from .. import attention
+
+    state = context.get("state")
+    if state is None:
+        return ActionResult(ok=False, output="no state")
+    if args.get("release") or str(args.get("on") or args.get("text") or "").strip().lower() in (
+        "release", "open", "defocus", "let go", "расфокус", "отпустить"
+    ):
+        attention.release(state)
+        return ActionResult(ok=True, output="released my focus; letting my mind open and wander")
+    what = str(args.get("on") or args.get("text") or "").strip()
+    if not what:
+        return ActionResult(ok=True, output=f"my attention now: {attention.describe(state)}")
+    strength = float(args.get("strength", 0.8))
+    attention.attend(state, what, strength)
+    return ActionResult(ok=True, output=attention.describe(state))
 
 
 def _say(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
@@ -417,6 +444,14 @@ def build_builtin_tools() -> list[Tool]:
             risk=RiskLevel.NONE,
             reversible=True,
             handler=_reflect,
+        ),
+        Tool(
+            name="focus",
+            description="direct my own attention: narrow onto something (on, optional strength), "
+                        "or release it (release=true) to let my mind wander",
+            risk=RiskLevel.NONE,
+            reversible=True,
+            handler=_focus,
         ),
         Tool(
             name="recall",

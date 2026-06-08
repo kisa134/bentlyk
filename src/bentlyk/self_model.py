@@ -171,7 +171,8 @@ class DynamicState:
     attachment: float = 0.7
     coherence: float = 0.8
 
-    focus: str = ""  # what the agent is currently oriented toward
+    focus: str = ""  # current object of inner attention (what I'm oriented toward)
+    focus_strength: float = 0.45  # how tight: ~0 open/defocused, 1 narrow/intense
     autonomy: AutonomyMode = AutonomyMode.SUGGEST
     recent_successes: int = 0
     recent_failures: int = 0
@@ -181,6 +182,9 @@ class DynamicState:
     last_user_ts: float = 0.0
     last_outreach_ts: float = 0.0
     unanswered_outreach: int = 0
+    # Self-work cadence (persisted): when I last took a step on my own goals. Time-based
+    # so the self-development loop survives restarts instead of resetting a beat counter.
+    last_pursue_ts: float = 0.0
     # Sense of time (persisted): when I first awoke and when I last lived a cycle.
     birth_ts: float = 0.0
     last_event_ts: float = 0.0

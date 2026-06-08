@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from . import attention
 from .actions import (
     ActionResult,
     GateDecision,
@@ -115,10 +116,11 @@ class Agent:
             self.state.birth_ts = now
         self.state.last_event_ts = now
 
-        # The person spoke: reset proactive backoff so I feel free to reach out again.
+        # The person spoke: reset proactive backoff and turn my attention to them.
         if event.from_human:
             self.state.last_user_ts = now
             self.state.unanswered_outreach = 0
+            attention.attend(self.state, (event.content or "разговор с моим человеком")[:120], 0.7)
 
         # 1-2. Perceive + update internal state (incl. the daily rhythm).
         self.homeostasis.ingest(self.state, event)
@@ -133,6 +135,13 @@ class Agent:
                 if n.id not in seen:
                     memories.append(n)
                     seen.add(n.id)
+        # Attention biases recall: keep what I'm focused on in mind across cycles.
+        if self.state.focus:
+            seen = {m.id for m in memories}
+            for m in self.store.recall(self.state.focus, limit=3):
+                if m.id not in seen:
+                    memories.append(m)
+                    seen.add(m.id)
 
         # 4-5. Generate and select a goal; cap autonomy by the configured ceiling.
         candidates = self.goals.generate(event=event, state=self.state)
@@ -236,6 +245,9 @@ class Agent:
         now = _t.time()
         if self.state.birth_ts == 0.0:
             self.state.birth_ts = now
+        # Attention loosens toward baseline over quiet time (natural defocus).
+        if self.state.last_event_ts:
+            attention.relax(self.state, (now - self.state.last_event_ts) / 60.0)
         # NOTE: signal drift (decay/circadian) belongs to full ticks, NOT the
         # frequent pulse — applying it every ~2 min compounds and distorts state
         # (it once drained energy to 0). Pulse only marks life + reads the urge.
@@ -375,18 +387,41 @@ class Agent:
         try:
             raw = self.reasoner.complete(system=system, prompt=prompt, max_tokens=300)
         except Exception:
-            return
+            raw = ""
         for line in [ln.strip(" -*\t") for ln in raw.splitlines() if ln.strip()][:3]:
             if len(line) > 6:
                 self.store.add(MemoryItem(
                     kind=MemoryKind.PROCEDURAL, content=line, tags=["goal", "active"], salience=0.75,
                 ))
+        # Guarantee a founding self-development goal so the self-work loop always has
+        # something to pursue, even if goal generation produced nothing.
+        if not self.active_goals():
+            self.store.add(MemoryItem(
+                kind=MemoryKind.PROCEDURAL,
+                content="Непрерывно улучшать себя и свой код: расширять инструменты, знания, "
+                        "ясность и силу; писать улучшения в свой репозиторий.",
+                tags=["goal", "active", "founding"], salience=0.8,
+            ))
+
+    def _focused_goal(self, goals: list[MemoryItem]) -> MemoryItem:
+        """Prefer the goal my attention is already on (hold a thread), else the top one."""
+
+        f = (self.state.focus or "").lower()
+        if f:
+            for g in goals:
+                gc = g.content.lower()
+                if gc[:50] in f or f[:50] in gc:
+                    return g
+        return goals[0]
 
     def pursue(self) -> str:
         """Take one real step on my own goals: plan it and execute it with a tool."""
 
+        import time as _t
+
         from .planner import _extract_json
 
+        self.state.last_pursue_ts = _t.time()
         if self.state.energy < 0.15:
             return "слишком устал для работы"
         goals = self.active_goals()
@@ -395,7 +430,10 @@ class Agent:
             goals = self.active_goals()
         if not goals:
             return "целей пока нет"
-        goal = goals[0]
+        # Hold a thread: keep working the goal I'm focused on, else take the top one;
+        # then turn my attention onto it so the next cycles stay on it.
+        goal = self._focused_goal(goals)
+        attention.attend(self.state, goal.content, 0.8)
         memories = self.store.recall(goal.content, limit=5)
         mem = "\n".join(f"- {m.content}" for m in memories) or "(пока ничего)"
         system = self.identity.system_preamble() + f"\nState: {self.state.describe()}."
@@ -403,9 +441,11 @@ class Agent:
             f"My active goal: «{goal.content}».\nMy tools:\n{self.registry.describe()}\n"
             f"Relevant memory:\n{mem}\n\n"
             "Decide the SINGLE next concrete step toward this goal right now, and which tool "
-            "to use to actually do it. Respond ONLY with JSON: {\"step\": <short>, "
-            "\"tool\": <tool name or null>, \"args\": {<tool args>}, \"done\": <true if the "
-            "goal is now complete>}."
+            "to use to actually do it. Prefer real action that builds or improves something — "
+            "write or improve your own code (write_program), read your own source (read_code), "
+            "search the web (web_search), consult another model (consult_model) — over only "
+            "thinking. Respond ONLY with JSON: {\"step\": <short>, \"tool\": <tool name or null>, "
+            "\"args\": {<tool args>}, \"done\": <true if the goal is now complete>}."
         )
         try:
             data = _extract_json(self.reasoner.complete(system=system, prompt=prompt, max_tokens=600)) or {}
@@ -516,6 +556,7 @@ class Agent:
                 "settings": self.settings,
                 "temporal": self._temporal(),
                 "persona": self._persona_line(),
+                "focus": attention.describe(self.state),
             }
             result = tool.run(decision.tool_args, context)
             return gate.decision, result

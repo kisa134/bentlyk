@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from bentlyk.attention import describe as _describe_focus  # noqa: E402
 from bentlyk.homeostasis import REACH_OUT_THRESHOLD, urge_components  # noqa: E402
 from bentlyk.memory import MemoryKind  # noqa: E402
 from bentlyk.self_model import _human_span  # noqa: E402
@@ -83,6 +84,9 @@ class handler(BaseHTTPRequestHandler):
         sections = [
             banner,
             _card("Кем я становлюсь", f'<div class="persona">{html.escape(persona) or "формируется…"}</div>'),
+            _card("Внимание / фокус",
+                  f'<div class="persona">{html.escape(_describe_focus(st))}</div>'
+                  + _bar("focus", st.focus_strength)),
             _card("Его цели и проекты (своя жизнь)",
                   _timeline(goals) if goals else "<p class='muted'>ещё не поставил</p>"),
             _card("Что он делает по своим целям", _timeline(self_work)),
