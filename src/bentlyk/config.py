@@ -28,11 +28,11 @@ _ANTHROPIC_DEFAULT = "claude-sonnet-4-6"
 def _llm_defaults(key: str) -> tuple[str, str]:
     """(base_url, default chat model) inferred from the API key's prefix."""
 
-    if key.startswith("wsk_"):  # WaveSpeed
-        return "https://llm.wavespeed.ai/v1", "anthropic/claude-sonnet-4.6"
+    if key.startswith("wsk_"):  # WaveSpeed — default to a top Chinese model
+        return "https://llm.wavespeed.ai/v1", "deepseek/deepseek-chat"
     if key.startswith("sk-or"):  # OpenRouter
         return "https://openrouter.ai/api/v1", "deepseek/deepseek-chat"
-    return "https://openrouter.ai/api/v1", "anthropic/claude-sonnet-4.6"
+    return "https://openrouter.ai/api/v1", "deepseek/deepseek-chat"
 
 # Supabase REST defaults. The publishable key is RLS-gated and safe to ship per
 # Supabase's design; override via SUPABASE_URL / SUPABASE_KEY env for another
@@ -85,6 +85,11 @@ class Settings:
     # Self-authoring: Bentlyk's own repo ("home") it can write code/pages into.
     gh_token: str = ""  # fine-grained PAT with Contents:write on self_repo
     self_repo: str = "kisa134/bentlyk-self"
+
+    # Embodiment on a real machine (the worker as a body): a sandbox workdir, and
+    # opt-in local code execution. Off by default; never enable on the public webhook.
+    workdir: str = ""  # sandbox dir for local files/code (default ~/.bentlyk/work)
+    allow_code: bool = False  # BENTLYK_ALLOW_CODE=1 to let it run code locally
 
     @property
     def llm_key(self) -> str:
@@ -143,4 +148,10 @@ class Settings:
             telegram_channel_id=_env("TELEGRAM_CHANNEL_ID"),
             gh_token=_env("BENTLYK_GH_TOKEN"),
             self_repo=_env("BENTLYK_SELF_REPO") or "kisa134/bentlyk-self",
+            workdir=_env("BENTLYK_WORKDIR"),
+            allow_code=_env("BENTLYK_ALLOW_CODE") in ("1", "true", "yes"),
         )
+
+    @property
+    def work_path(self) -> "Path":
+        return Path(self.workdir) if self.workdir else Path.home() / ".bentlyk" / "work"

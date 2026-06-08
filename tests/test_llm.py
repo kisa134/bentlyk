@@ -29,7 +29,7 @@ def test_wavespeed_key_autodetects_base_and_model(monkeypatch):
     monkeypatch.delenv("BENTLYK_MODEL", raising=False)
     s = Settings.from_env()
     assert s.llm_base_url == "https://llm.wavespeed.ai/v1"
-    assert s.model.startswith("anthropic/")
+    assert s.model == "deepseek/deepseek-chat"  # top Chinese default
     assert s.provider == "openai_compat"
 
 
