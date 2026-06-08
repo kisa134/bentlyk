@@ -12,7 +12,7 @@ Memory must not only grow but also compress, be re-scored, and be rewritten by
 reflection — otherwise the agent becomes noisy and self-contradictory.
 """
 
-from .base import MemoryItem, MemoryKind
+from .base import MemoryItem, MemoryKind, configure_embeddings, embeddings_active
 from .store import MemoryStore, SqliteMemoryStore, open_store
 
 __all__ = [
@@ -21,4 +21,6 @@ __all__ = [
     "MemoryStore",
     "SqliteMemoryStore",
     "open_store",
+    "configure_embeddings",
+    "embeddings_active",
 ]

@@ -152,6 +152,17 @@ def run_worker(agent: Agent, interval: float) -> int:
                 f"Тело сменно, я остаюсь собой.",
         tags=["body", "awake", "inventory"], salience=0.75,
     ))
+    # If real embeddings are configured, back-fill old memories once at boot so they
+    # become searchable on the new model (idempotent — later boots find nothing to do).
+    from .memory.base import embeddings_active
+
+    if embeddings_active():
+        try:
+            n = agent.reembed()
+            print(f"embeddings: live ({agent.settings.embed_model}); back-filled {n} memories")
+        except Exception as exc:  # pragma: no cover - network
+            print(f"embeddings back-fill skipped: {exc}")
+
     token = agent.settings.telegram_bot_token
     # How often it takes a real step on its own goals (self-development). Time-based so
     # it survives restarts; ~6 min keeps it working on itself without burning tokens.
@@ -208,6 +219,8 @@ def build_parser() -> argparse.ArgumentParser:
     pw = sub.add_parser("worker", help="run the persistent autonomous loop (daemon)")
     pw.add_argument("--interval", type=float, default=1800.0, help="seconds between ticks")
 
+    sub.add_parser("reembed", help="back-fill memories onto the configured embedding model")
+
     return p
 
 
@@ -245,6 +258,11 @@ def main(argv: list[str] | None = None) -> int:
         return run_once(agent, text)
     if args.mode == "tick":
         return run_ticks(agent, args.n)
+    if args.mode == "reembed":
+        n = agent.reembed()
+        print(f"reembedded {n} memories onto {agent.settings.embed_model or '(hash)'}")
+        agent.close()
+        return 0
     if args.mode == "worker":
         return run_worker(agent, args.interval)
     # default: chat

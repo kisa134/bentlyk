@@ -64,6 +64,13 @@ class Settings:
     fallback_model: str = ""  # tried if the primary model errors
     tavily_key: str = ""  # optional web-search key; without it, keyless DuckDuckGo is used
 
+    # Embeddings — real semantic memory. WaveSpeed is chat-only, so embeddings come
+    # from any OpenAI-compatible /embeddings endpoint (Jina, OpenAI, DeepInfra, Gemini,
+    # …). Unset => the dependency-free hash embedding (shallow recall).
+    embed_model: str = ""
+    embed_base_url: str = ""
+    embed_key: str = ""
+
     # Storage. Preference: Supabase REST (HTTPS, serverless-friendly) > Postgres
     # DSN > local SQLite.
     store: str = "sqlite"  # "sqlite" | "postgres" | "supabase"
@@ -118,6 +125,10 @@ class Settings:
         return bool(self.supabase_url and self.supabase_key)
 
     @property
+    def embeddings_enabled(self) -> bool:
+        return bool(self.embed_model and self.embed_base_url and self.embed_key)
+
+    @property
     def effective_reason_model(self) -> str:
         return self.reason_model or self.model
 
@@ -145,6 +156,9 @@ class Settings:
             fallback_model=_env("BENTLYK_FALLBACK_MODEL"),
             reflection_model=_env("BENTLYK_REFLECTION_MODEL"),
             tavily_key=_env("BENTLYK_TAVILY_KEY"),
+            embed_model=_env("BENTLYK_EMBED_MODEL"),
+            embed_base_url=_clean(_env("BENTLYK_EMBED_BASE_URL")),
+            embed_key=_env("BENTLYK_EMBED_KEY"),
             store=_env("BENTLYK_STORE") or ("postgres" if _env("BENTLYK_PG_DSN") else "sqlite"),
             sqlite_path=Path(_env("BENTLYK_SQLITE_PATH")) if _env("BENTLYK_SQLITE_PATH")
             else _default_sqlite_path(),

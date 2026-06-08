@@ -72,6 +72,12 @@ class Agent:
         state: DynamicState | None = None,
     ) -> None:
         self.settings = settings or Settings.from_env()
+        # Point memory embeddings at a real model if configured (else hash mode).
+        from .memory.base import configure_embeddings
+
+        configure_embeddings(
+            self.settings.embed_model, self.settings.embed_base_url, self.settings.embed_key
+        )
         if store is not None:
             self.store = store
             self._persistence = StatePersistence.beside(self.settings.sqlite_path)
@@ -261,6 +267,26 @@ class Agent:
 
         self.state.now_doing = (text or "")[:240]
         self._persistence.save(self.identity, self.state)
+
+    def reembed(self, limit: int = 100000) -> int:
+        """Back-fill memories onto the live embedding model, so old ones become
+        searchable again after switching from the hash embedding. Idempotent: only
+        touches items whose vector dimension doesn't match the current model."""
+
+        from .memory.base import embed, embeddings_active
+
+        if not embeddings_active():
+            return 0
+        target = len(embed("dimension probe"))
+        migrated = 0
+        for it in self.store.all():
+            if len(it.embedding) != target:
+                it.embedding = embed(it.content)
+                self.store.update(it)
+                migrated += 1
+                if migrated >= limit:
+                    break
+        return migrated
 
     def maybe_reach_out(self, *, force: bool = False, now: float | None = None) -> str | None:
         """Reach out only when the inner urge crosses the threshold (or forced)."""
