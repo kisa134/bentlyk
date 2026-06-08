@@ -256,6 +256,12 @@ class Agent:
         self._persistence.save(self.identity, self.state)
         return urge, reason
 
+    def record_activity(self, text: str) -> None:
+        """Publish the live 'what I'm doing right now' line for the feed, and persist it."""
+
+        self.state.now_doing = (text or "")[:240]
+        self._persistence.save(self.identity, self.state)
+
     def maybe_reach_out(self, *, force: bool = False, now: float | None = None) -> str | None:
         """Reach out only when the inner urge crosses the threshold (or forced)."""
 

@@ -174,7 +174,9 @@ _PAGE_HEAD = """<!doctype html>
   .foot { color:#5a636e; font-size:.75rem; text-align:center; margin-top:1.5rem; }
 </style></head>
 <body><div class="wrap">
-  <h1>&#128062; Bentlyk</h1>
+  <h1>&#128062; Bentlyk <a id="livelink" href="#" style="font-size:.8rem;color:#7fd1c9;text-decoration:none">&#9654; live-лог</a></h1>
+  <script>var k=new URLSearchParams(location.search).get('key')||'';
+  document.getElementById('livelink').href='/api/live?key='+encodeURIComponent(k);</script>
 """
 
 _PAGE_FOOT = """

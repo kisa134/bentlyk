@@ -173,6 +173,7 @@ class DynamicState:
 
     focus: str = ""  # current object of inner attention (what I'm oriented toward)
     focus_strength: float = 0.45  # how tight: ~0 open/defocused, 1 narrow/intense
+    now_doing: str = ""  # one-line "what I'm doing right now", for the live feed
     autonomy: AutonomyMode = AutonomyMode.SUGGEST
     recent_successes: int = 0
     recent_failures: int = 0

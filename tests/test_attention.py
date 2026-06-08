@@ -38,6 +38,16 @@ def test_focus_tool_directs_and_releases():
     assert r.ok and s.focus == ""
 
 
+def test_record_activity_publishes_now_doing(tmp_path):
+    s = Settings(sqlite_path=tmp_path / "b.db", supabase_url="", supabase_key="")
+    agent = Agent(settings=s)
+    try:
+        agent.record_activity("работаю над собой: пишу код")
+        assert agent.state.now_doing.startswith("работаю")
+    finally:
+        agent.close()
+
+
 def test_pursue_stamps_time_and_guarantees_a_goal(tmp_path):
     # Offline (mock reasoner). The self-development loop must always have a goal and
     # must record when it last ran, so it can fire on a time cadence across restarts.

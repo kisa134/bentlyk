@@ -127,6 +127,11 @@ class SupabaseRest:
         }
         return [_from_row(r) for r in self._req("GET", "/memory", params=params)]
 
+    def recent_any(self, limit: int = 50) -> list[MemoryItem]:
+        """The newest memories across all contours, chronological — for the live feed."""
+        params = {"select": "*", "order": "created_at.desc", "limit": str(limit)}
+        return [_from_row(r) for r in self._req("GET", "/memory", params=params)]
+
     def recall(
         self, query: str, *, kinds: Iterable[MemoryKind] | None = None, limit: int = 8
     ) -> list[MemoryItem]:
