@@ -203,6 +203,9 @@ def run_worker(agent: Agent, interval: float) -> int:
             # right after boot instead of only every Nth beat.
             if time.time() - agent.state.last_pursue_ts >= PURSUE_EVERY_SEC:
                 line += f" | {agent.pursue()}"
+            # Live its public life: post to its own channel on its own cadence (opt-in).
+            if agent.maybe_publish():
+                line += " | posted to channel"
             agent.record_activity(line)  # publish to the live feed
             print(f"  · {line}")
             time.sleep(max(5.0, interval))

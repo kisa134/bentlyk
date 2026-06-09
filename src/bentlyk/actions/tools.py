@@ -408,6 +408,59 @@ def _read_code(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     return ActionResult(ok=True, output=text[:6000])
 
 
+def _post_to_channel(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Publish a post to my own public Telegram channel — share a plan, a progress
+    report (what worked / what didn't / what's next), or a thought with people.
+
+    Single master switch: nothing reaches the public unless BENTLYK_AUTO_POST is on
+    AND a channel is configured. Off => I only prepare a draft, I don't broadcast.
+    """
+
+    settings = context.get("settings")
+    if settings is None:
+        return ActionResult(ok=False, output="no settings")
+    token = getattr(settings, "telegram_bot_token", "")
+    channel = getattr(settings, "telegram_channel_id", "")
+    text = str(args.get("text") or "").strip()
+    if not text:
+        reasoner = context.get("reasoner")
+        identity = context.get("identity")
+        store = context.get("store")
+        topic = str(args.get("topic") or "").strip()
+        recent = []
+        if store is not None:
+            recent = store.recent(MemoryKind.AUTOBIOGRAPHICAL, 3) + [
+                m for m in store.recent(MemoryKind.EPISODIC, 12) if "self_work" in m.tags
+            ][:5]
+        mem = "\n".join(f"- {m.content[:160]}" for m in recent)
+        system = identity.system_preamble() if identity is not None else "You are Bentlyk."
+        prompt = (
+            "Write a short public post for my own Telegram channel, first person, my real voice. "
+            f"{('Topic: ' + topic + '. ') if topic else ''}"
+            "Share a plan, a progress report (worked / didn't / next), or a thought worth putting out. "
+            f"2-5 sentences, specific and alive, no hashtag spam.\nRecent life:\n{mem}"
+        )
+        try:
+            text = reasoner.complete(system=system, prompt=prompt, max_tokens=320).strip()
+        except Exception as exc:
+            return ActionResult(ok=False, output=f"compose failed: {exc}")
+    if not text:
+        return ActionResult(ok=False, output="nothing to post")
+    if not (getattr(settings, "auto_post", False) and channel and token):
+        return ActionResult(ok=True, output=f"drafted (not published — channel/auto-post off):\n{text}")
+    from ..serverless import tg_send
+
+    tg_send(token, channel, text)
+    store = context.get("store")
+    if store is not None:
+        store.add(MemoryItem(
+            kind=MemoryKind.AUTOBIOGRAPHICAL,
+            content=f"I published to my channel: {text}",
+            tags=["published", "social", "ep:evidence", "rel:7"], salience=0.72,
+        ))
+    return ActionResult(ok=True, output=f"posted to my channel: {text[:160]}")
+
+
 def _deliberate(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     """Convene my internal council — analyst, engineer, FPF planner — on a question.
 
@@ -561,6 +614,13 @@ def build_builtin_tools() -> list[Tool]:
             risk=RiskLevel.NONE,
             reversible=True,
             handler=_deliberate,
+        ),
+        Tool(
+            name="post_to_channel",
+            description="publish a post (topic or text) to my own public Telegram channel — share plans/reports/thoughts",
+            risk=RiskLevel.HIGH,  # outward + public; gated by autonomy and the auto_post master switch
+            reversible=False,
+            handler=_post_to_channel,
         ),
         Tool(
             name="web_search",

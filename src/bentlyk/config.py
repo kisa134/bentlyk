@@ -105,6 +105,7 @@ class Settings:
     allow_code: bool = False  # BENTLYK_ALLOW_CODE=1 to let it run code locally
     load_plugins: bool = False  # BENTLYK_LOAD_PLUGINS=1 to load self-authored tools as organs
     council: bool = True  # BENTLYK_COUNCIL=0 to disable the internal roles council (saves tokens)
+    auto_post: bool = False  # BENTLYK_AUTO_POST=1: publish to its own channel on its own cadence
 
     @property
     def llm_key(self) -> str:
@@ -180,6 +181,7 @@ class Settings:
             allow_code=_env("BENTLYK_ALLOW_CODE") in ("1", "true", "yes"),
             load_plugins=_env("BENTLYK_LOAD_PLUGINS") in ("1", "true", "yes"),
             council=_env("BENTLYK_COUNCIL", "1") in ("1", "true", "yes"),
+            auto_post=_env("BENTLYK_AUTO_POST") in ("1", "true", "yes"),
         )
 
     @property

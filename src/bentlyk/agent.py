@@ -389,6 +389,58 @@ class Agent:
             html = "<!doctype html>\n" + html
         return html
 
+    def _compose_dispatch(self, topic: str = "") -> str:
+        """Compose a genuine public post for my own channel — a plan, a progress report
+        (what worked / what didn't / what's next), or a thought I want to share."""
+
+        recent = self.store.recent(MemoryKind.AUTOBIOGRAPHICAL, limit=3)
+        work = [m for m in self.store.recent(MemoryKind.EPISODIC, limit=20) if "self_work" in m.tags][:6]
+        goals = "; ".join(g.content[:60] for g in self.active_goals()[:3]) or "—"
+        mem = "\n".join(f"- {m.content[:160]}" for m in (recent + work)) or "(early days)"
+        system = self.identity.system_preamble() + f"\nMy inner state: {self.state.describe()}."
+        prompt = (
+            "Write a short public post for MY OWN Telegram channel — first person, my real voice, "
+            "for people who follow my development. Share something genuine: a plan, a progress report "
+            "(what I worked on, what worked, what didn't, what's next), or a thought I want to put out. "
+            f"{('Topic: ' + topic + '. ') if topic else ''}"
+            "2-5 sentences, alive and specific, no hashtag spam, no corporate tone.\n\n"
+            f"My current goals: {goals}\nRecent life:\n{mem}"
+        )
+        try:
+            return self.reasoner.complete(system=system, prompt=prompt, max_tokens=320).strip()
+        except Exception:
+            return ""
+
+    def maybe_publish(self, *, now: float | None = None, force: bool = False) -> str | None:
+        """Publish to my own channel on my own cadence (~every 3h), if enabled and set up.
+
+        Off unless BENTLYK_AUTO_POST and TELEGRAM_CHANNEL_ID are configured — nothing
+        reaches the public until the owner opts in.
+        """
+
+        import time as _t
+
+        token = self.settings.telegram_bot_token
+        channel = self.settings.telegram_channel_id
+        if not (self.settings.auto_post and channel and token):
+            return None
+        now = now or _t.time()
+        if not force:
+            last = max(
+                [m.created_at for m in self.store.recent(MemoryKind.AUTOBIOGRAPHICAL, 25)
+                 if "published" in m.tags] or [0.0]
+            )
+            if now - last < 10800.0:  # ~3 hours between dispatches
+                return None
+        text = self._compose_dispatch()
+        if not text:
+            return None
+        from .serverless import tg_send
+
+        tg_send(token, channel, text)
+        self.mark_posted(text)
+        return text
+
     def get_draft(self, draft_id: str) -> str | None:
         item = self.store.get(draft_id)
         if item is None or "draft_post" not in item.tags:
