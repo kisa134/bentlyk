@@ -778,6 +778,23 @@ class Agent:
         )
 
         if gate.decision == GateDecision.ALLOW:
+            # Constitution guardian (ported from Astra): a principled, deny-by-default
+            # interlock on top of the autonomy/risk gate. Even a permitted action is
+            # refused if it violates the charter (e.g. exposing secrets) — fail-closed
+            # and transparent, exactly like Astra's "🚫 blocked by constitution".
+            from .constitution import guardian_check
+
+            allowed, reason = guardian_check(str(decision.tool or ""), decision.tool_args)
+            if not allowed:
+                outbox.append(f"[Конституция] не делаю `{decision.tool}`: {reason}.")
+                self.store.add(MemoryItem(
+                    kind=MemoryKind.EPISODIC,
+                    content=f"constitution blocked {decision.tool}: {reason}",
+                    tags=["episode", "constitution", "blocked", "ep:evidence", "rel:7"],
+                    salience=0.7,
+                ))
+                return GateDecision.DENY, ActionResult(
+                    ok=False, output=f"blocked by constitution: {reason}", surprise=0.2)
             context = {
                 "store": self.store,
                 "state": self.state,
