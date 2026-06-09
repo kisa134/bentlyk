@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from . import attention
 from .actions import (
     ActionResult,
+    AutonomyMode,
     GateDecision,
     ToolRegistry,
     default_registry,
@@ -617,8 +618,16 @@ class Agent:
         return gate.decision, None
 
     def _clamp_autonomy(self) -> None:
-        if self.state.autonomy > self.settings.max_autonomy:
-            self.state.autonomy = self.settings.max_autonomy
+        ceiling = self.settings.max_autonomy
+        if self.state.autonomy > ceiling:
+            self.state.autonomy = ceiling
+        # Full-freedom body: the owner pinned the top of the ladder (escalated_act).
+        # Don't let the homeostatic throttle (low energy / a run of failures) drag
+        # the operating level down to OBSERVE — that deadlocked the self-development
+        # loop: at OBSERVE it can't act, so it never earns the successes that would
+        # let it climb back, while each blocked attempt drained energy further.
+        if ceiling >= AutonomyMode.ESCALATED_ACT and self.state.autonomy < ceiling:
+            self.state.autonomy = ceiling
 
     def _record_episode(self, event: Event, outcome: str, *, success: bool) -> None:
         tags = ["episode"] + (["success"] if success else ["failure"])

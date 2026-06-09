@@ -377,7 +377,17 @@ def _read_code(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
         return ActionResult(ok=True, output="my modules:\n" + "\n".join(sorted(files)))
 
     if not os.path.exists(target):
-        return ActionResult(ok=False, output=f"no such file: {rel}")
+        # Self-correct instead of failing: a wrong guess (e.g. a hallucinated path)
+        # gets the real module list back, so the next step can read an actual file
+        # rather than looping on a phantom. ok=True so it doesn't feed the failure
+        # spiral that was draining energy and collapsing autonomy.
+        files = []
+        for dirpath, _dirs, names in os.walk(root):
+            for n in sorted(names):
+                if n.endswith(".py"):
+                    files.append(os.path.relpath(os.path.join(dirpath, n), root))
+        listing = "\n".join(sorted(files))
+        return ActionResult(ok=True, output=f"no such file: {rel}\nmy actual modules:\n{listing}")
     try:
         text = open(target, encoding="utf-8").read()
     except OSError as exc:
