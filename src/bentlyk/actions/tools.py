@@ -408,6 +408,21 @@ def _read_code(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     return ActionResult(ok=True, output=text[:6000])
 
 
+def _learn_skill(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Name and practise a skill I'm developing — real learning with a growing level."""
+
+    store = context.get("store")
+    name = str(args.get("name") or args.get("skill") or "").strip()
+    if store is None or not name:
+        return ActionResult(ok=False, output="need a skill name to start learning")
+    from ..skills import level, practice
+
+    desc = str(args.get("description") or args.get("desc") or "").strip()
+    success = args.get("success", True) not in (False, "false", 0, "0")
+    item = practice(store, name, success=success, desc=desc)
+    return ActionResult(ok=True, output=f"practising «{name}» — level {level(item)}/9")
+
+
 def _post_to_channel(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     """Publish a post to my own public Telegram channel — share a plan, a progress
     report (what worked / what didn't / what's next), or a thought with people.
@@ -614,6 +629,13 @@ def build_builtin_tools() -> list[Tool]:
             risk=RiskLevel.NONE,
             reversible=True,
             handler=_deliberate,
+        ),
+        Tool(
+            name="learn_skill",
+            description="name and practise a skill I'm developing (name, description) — tracks my growing level",
+            risk=RiskLevel.LOW,
+            reversible=True,
+            handler=_learn_skill,
         ),
         Tool(
             name="post_to_channel",

@@ -461,6 +461,12 @@ class Agent:
         self._persistence.save(self.identity, self.state)
 
     # --- living its own life: self-directed goals -----------------------------
+    def skills(self) -> list[MemoryItem]:
+        """My named, practised abilities, strongest first — what I'm actually learning."""
+        from .skills import list_skills, proficiency
+
+        return sorted(list_skills(self.store), key=proficiency, reverse=True)
+
     def active_goals(self) -> list[MemoryItem]:
         return [
             m for m in self.store.all(MemoryKind.PROCEDURAL)
@@ -609,7 +615,15 @@ class Agent:
                      + (["success"] if ok else ["failure"]),
                 salience=0.5 if ok else 0.65,
             ))
+            # Learning: this action also practised a named skill — its level moves on the outcome.
+            from .skills import practice_from_tool
+
+            sk = practice_from_tool(self.store, str(toolname), ok)
             line += f" | {toolname}:{gd.name.lower()}"
+            if sk is not None:
+                from .skills import level as _lvl
+
+                line += f" (навык {str(toolname)}→{_lvl(sk)}/9)"
         # Lesson (evidence distilled) — what I learned, separate from plan and outcome.
         lesson = str(data.get("lesson") or "").strip()
         if lesson:

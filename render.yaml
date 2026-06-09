@@ -34,7 +34,7 @@ services:
       - key: TELEGRAM_CHANNEL_ID      # his own channel to post to (e.g. @my_channel); add the bot as admin
         sync: false
       - key: BENTLYK_AUTO_POST        # "1" lets him publish to that channel on his own (master switch)
-        value: "0"
+        value: "1"
       - key: BENTLYK_GH_TOKEN         # optional — lets it write its own code
         sync: false
       - key: SUPABASE_URL             # optional — defaults baked in; set for your own project
