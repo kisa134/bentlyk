@@ -183,6 +183,12 @@ def run_worker(agent: Agent, interval: float) -> int:
             if beat % 5 == 0:
                 for ev in sense_events():
                     agent.tick(ev)
+                # Weave the memory graph steadily — it's cheap (no LLM), so don't make it
+                # wait on the ~100-min sleep cadence; the graph should grow continuously.
+                try:
+                    agent._weave_graph()
+                except Exception:  # pragma: no cover - never let weaving break the worker
+                    pass
             owner = owner_id(agent)
             if owner and token:
                 msg = agent.maybe_reach_out()  # LLM only if the urge fires
