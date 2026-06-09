@@ -455,6 +455,11 @@ class Agent:
         from .planner import _extract_json
 
         self.state.last_pursue_ts = _t.time()
+        # Operate at my granted autonomy from the first step, so the permission gate
+        # below sees the right level (on a full-freedom body, escalated_act). Without
+        # this the gate read a stale/low level and blocked my own actions — which then
+        # counted as failures and drained the energy that gates this very loop.
+        self._clamp_autonomy()
         if self.state.energy < 0.15:
             return "слишком устал для работы"
         goals = self.active_goals()
