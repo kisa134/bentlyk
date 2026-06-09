@@ -526,7 +526,7 @@ class Agent:
         # this the gate read a stale/low level and blocked my own actions — which then
         # counted as failures and drained the energy that gates this very loop.
         self._clamp_autonomy()
-        if self.state.energy < 0.15:
+        if self.state.energy < 0.05:
             return "слишком устал для работы"
         goals = self.active_goals()
         if not goals:

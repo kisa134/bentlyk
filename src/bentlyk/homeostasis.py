@@ -120,10 +120,12 @@ class HomeostasisEngine:
             # Contact with the person feeds attachment and costs a little energy.
             state.adjust(attachment=+0.05, energy=-0.03, curiosity=+0.02)
         elif event.kind == EventKind.TIMER:
-            # Idle ticks slowly restore energy and let curiosity build.
-            state.adjust(energy=+0.02, curiosity=+0.03)
+            # Idle ticks restore energy and let curiosity build.
+            state.adjust(energy=+0.035, curiosity=+0.03)
         elif event.kind == EventKind.FEED:
-            state.adjust(surprise=+0.10, curiosity=+0.05)
+            # Sensing the body at rest also recovers a little energy (the common worker
+            # event), so a busy self-development loop stays sustainable.
+            state.adjust(surprise=+0.10, curiosity=+0.05, energy=+0.025)
         elif event.kind in (EventKind.WEBHOOK, EventKind.FILE):
             state.adjust(surprise=+0.05, energy=-0.02)
 
@@ -139,11 +141,13 @@ class HomeostasisEngine:
         if success:
             state.recent_successes += 1
             state.recent_failures = max(0, state.recent_failures - 1)
-            state.adjust(pain=-0.05, coherence=+0.03, distrust=-0.02, energy=-0.02)
+            # Accomplishment sustains him — succeeding at real work should energise, not
+            # drain (the faster loop was crashing energy and freezing pursue).
+            state.adjust(pain=-0.05, coherence=+0.03, distrust=-0.02, energy=+0.02)
         else:
             state.recent_failures += 1
             state.recent_successes = max(0, state.recent_successes - 1)
-            state.adjust(pain=+0.12, coherence=-0.05, distrust=+0.08, energy=-0.05)
+            state.adjust(pain=+0.08, coherence=-0.05, distrust=+0.06, energy=-0.03)
 
         if surprise:
             state.adjust(surprise=+surprise, distrust=+surprise * 0.5)
