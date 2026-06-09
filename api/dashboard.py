@@ -160,8 +160,11 @@ class handler(BaseHTTPRequestHandler):
             f'<span class="track"><span class="fill" style="width:{min(100,v)}%;background:{_KIND_COLOR.get(k.value)}"></span></span>'
             f'<span class="val">{v}</span></div>' for k, v in counts.items())
         nlinks = len(store.links()) if hasattr(store, "links") else "?"
+        axioms = agent.axioms() if hasattr(agent, "axioms") else []
         tab_mem = (
-            _card("Объём памяти по контурам", counts_html
+            _card("Аксиомы — вечные истины, всегда в его контексте",
+                  _timeline(axioms) if axioms else "<p class='muted'>пока нет</p>")
+            + _card("Объём памяти по контурам", counts_html
                   + f'<div class="meta">всего {sum(counts.values())} · связей в графе {nlinks}</div>')
             + _card("Знания (по надёжности)", _timeline(sorted(semantic, key=lambda m: reliability_of(m.tags), reverse=True)[:14]))
             + _card("Навыки и опубликованный код", _timeline(procedural[:12]))

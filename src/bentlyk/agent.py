@@ -142,8 +142,16 @@ class Agent:
         self.homeostasis.circadian(self.state, now, self.settings.tz_offset_hours)
         tempo = self.homeostasis.tempo(self.state)
 
-        # 3. Retrieve relevant memory, expanded along the memory graph (associative).
-        memories = self.store.recall(event.content or event.kind.value, limit=6)
+        # 3. Retrieve relevant memory. Axioms are ALWAYS in context (grounding truths),
+        #    then similarity recall, expanded along the memory graph (associative).
+        from .axioms import list_axioms
+
+        memories = list_axioms(self.store)
+        seen0 = {m.id for m in memories}
+        for m in self.store.recall(event.content or event.kind.value, limit=6):
+            if m.id not in seen0:
+                memories.append(m)
+                seen0.add(m.id)
         if hasattr(self.store, "neighbors") and memories:
             seen = {m.id for m in memories}
             for n in self.store.neighbors([m.id for m in memories], limit=4):
@@ -466,6 +474,12 @@ class Agent:
         from .skills import list_skills, proficiency
 
         return sorted(list_skills(self.store), key=proficiency, reverse=True)
+
+    def axioms(self) -> list[MemoryItem]:
+        """My durable ground truths, always kept in context."""
+        from .axioms import list_axioms
+
+        return list_axioms(self.store, limit=12)
 
     def active_goals(self) -> list[MemoryItem]:
         return [
@@ -858,6 +872,9 @@ class Agent:
 
     # --- lifecycle ------------------------------------------------------------
     def boot(self) -> None:
+        from .axioms import ensure_founding
+
+        ensure_founding(self.store, self.identity.name)  # ground truths always in context
         self.store.add(
             MemoryItem(
                 kind=MemoryKind.AUTOBIOGRAPHICAL,

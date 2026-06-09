@@ -408,6 +408,20 @@ def _read_code(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     return ActionResult(ok=True, output=text[:6000])
 
 
+def _set_axiom(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Record a durable axiom — a ground truth I always keep in context (about who I
+    am, who my person is, or a principle I've settled on)."""
+
+    store = context.get("store")
+    text = str(args.get("text") or args.get("axiom") or "").strip()
+    if store is None or not text:
+        return ActionResult(ok=False, output="need the text of the axiom to remember")
+    from ..axioms import set_axiom
+
+    set_axiom(store, text)
+    return ActionResult(ok=True, output=f"axiom held (always in my context): {text[:140]}")
+
+
 def _learn_skill(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     """Name and practise a skill I'm developing — real learning with a growing level."""
 
@@ -636,6 +650,13 @@ def build_builtin_tools() -> list[Tool]:
             risk=RiskLevel.LOW,
             reversible=True,
             handler=_learn_skill,
+        ),
+        Tool(
+            name="set_axiom",
+            description="hold a durable ground truth (text) always in my context — who I am, who my person is, a settled principle",
+            risk=RiskLevel.LOW,
+            reversible=True,
+            handler=_set_axiom,
         ),
         Tool(
             name="post_to_channel",
