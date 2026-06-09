@@ -1,9 +1,8 @@
-"""A private dashboard into Bentlyk's inner life.
+"""A rich, tabbed window into Bentlyk's inner life.
 
-Live, auto-refreshing HTML view of everything: whether it's alive right now and in
-which body, its homeostatic signals, the urge that drives proactivity (broken
-down), its stream of consciousness, reflections, self-narrative, knowledge, and
-the bodies it has lived in. Open — no key (owner's choice, for easy sharing).
+Live, auto-refreshing view organised into tabs: what it's doing right now, its
+self-development (code it writes and commits), its stream of consciousness, its
+memory, and who it is becoming. Open — no key (owner's choice, for easy sharing).
 
     /api/dashboard      (also served at the bare domain root)
 """
@@ -12,6 +11,7 @@ from __future__ import annotations
 
 import html
 import os
+import re
 import sys
 import time
 from http.server import BaseHTTPRequestHandler
@@ -34,7 +34,7 @@ class handler(BaseHTTPRequestHandler):
         try:
             body = self._render()
         except Exception as exc:  # pragma: no cover
-            body = f"<h1>Bentlyk</h1><pre>dashboard error: {html.escape(str(exc))}</pre>"
+            body = _PAGE_HEAD + f'<div class="card"><pre>dashboard error: {html.escape(str(exc))}</pre></div>' + _PAGE_FOOT.format(ts="")
         self._send(200, body)
 
     def _render(self) -> str:
@@ -42,61 +42,133 @@ class handler(BaseHTTPRequestHandler):
         st = agent.state
         now = time.time()
 
-        # --- liveness + current body ---
-        since = now - st.last_event_ts if st.last_event_ts else 1e9
-        alive = since < 360
-        autobio = agent.store.recent(MemoryKind.AUTOBIOGRAPHICAL, limit=12)
+        # --- pull data once ---
+        autobio = agent.store.recent(MemoryKind.AUTOBIOGRAPHICAL, limit=24)
+        episodes = agent.store.recent(MemoryKind.EPISODIC, limit=60)
+        semantic = agent.store.recent(MemoryKind.SEMANTIC, limit=24)
+        procedural = agent.store.recent(MemoryKind.PROCEDURAL, limit=24)
+        goals = agent.active_goals()
+        counts = {k: len(agent.store.all(k)) for k in MemoryKind}
+
         bodies = [m for m in autobio if "awake" in m.tags or "inventory" in m.tags]
         cur_body = _host_of(bodies[0].content) if bodies else "—"
+        since = now - st.last_event_ts if st.last_event_ts else 1e9
+        alive = since < 360
+
+        # derived slices
+        self_work = [m for m in episodes if "self_work" in m.tags]
+        published = [m for m in (procedural + episodes) if "committed " in m.content or "published code" in m.content]
+        questions = [m for m in episodes if "=> asked:" in m.content or " asked:" in m.content]
+        autonomous = [m for m in episodes if m.content.startswith(("[timer", "[feed", "тело:"))]
+        conversation = [m for m in episodes if "message" in m.tags or "conversation" in m.tags]
+        narrative = [m for m in autobio if "self_narrative" in m.tags]
+        reflections = [m for m in autobio if "reflection" in m.tags]
+
+        # tools-usage summary (recent)
+        tool_counts: dict[str, int] = {}
+        for m in episodes:
+            mt = re.match(r"used (\w+) → (\w+)", m.content)
+            if mt:
+                key = f"{mt.group(1)} ({mt.group(2)})"
+                tool_counts[key] = tool_counts.get(key, 0) + 1
+
+        # --- banner (always visible) ---
         dot = "#3ca7a0" if alive else "#6b7480"
         banner = (
             f'<div class="banner"><span class="bigdot" style="background:{dot}"></span>'
             f'<b>{"ЖИВ" if alive else "СПИТ"}</b> · тело: <b>{html.escape(cur_body)}</b> · '
-            f'последний вздох: {_human_span(since)} назад · режим: {st.autonomy.label}</div>'
+            f'последний вздох: {_human_span(since)} назад · режим: <b>{st.autonomy.label}</b> · '
+            f'возраст: {_human_span(now - st.birth_ts) if st.birth_ts else "?"} · тиков: {st.tick_count}</div>'
         )
 
-        # --- urge breakdown ---
+        # --- urge / proactivity ---
         u = urge_components(st, now)
         will = "пора писать самому" if u["urge"] >= REACH_OUT_THRESHOLD else (
-            "молчит: только что общались" if u["floored"] or u["longing"] < 0.1
-            else "копит позыв")
-        urge_rows = "".join(_bar(k, u[k]) for k in ("longing", "drive", "withdrawal", "tired"))
-        urge_card = _card("Позыв написать (проактивность)",
+            "молчит: только что общались" if u["floored"] or u["longing"] < 0.1 else "копит позыв")
+        urge_card = _card("Позыв написать тебе (проактивность)",
             _bar("urge", u["urge"]) +
-            f'<div class="meta">порог {REACH_OUT_THRESHOLD:g} · сейчас: <b>{will}</b> · '
+            f'<div class="meta">порог {REACH_OUT_THRESHOLD:g} · сейчас: <b>{html.escape(will)}</b> · '
             f'тишина {u["silence_h"]} ч · неотвеченных {st.unanswered_outreach}</div>'
-            f'<div class="meta" style="margin-top:.5rem">из чего складывается:</div>{urge_rows}')
+            f'<div class="meta" style="margin-top:.5rem">из чего складывается:</div>'
+            + "".join(_bar(k, u[k]) for k in ("longing", "drive", "withdrawal", "tired")))
 
-        # --- the rest ---
-        episodes = agent.store.recent(MemoryKind.EPISODIC, limit=24)
-        autonomous = [m for m in episodes if m.content.startswith(("[timer", "тело:"))]
-        semantic = agent.store.recent(MemoryKind.SEMANTIC, limit=12)
-        counts = " · ".join(f"{k.value}: {len(agent.store.all(k))}" for k in MemoryKind)
-        persona = agent._persona_line()
+        # === TAB 1: Сейчас ===
+        tab_now = (
+            _card("Чем он занят прямо сейчас",
+                  f'<div class="persona">{html.escape(st.now_doing or "—")}</div>')
+            + _card("Внимание / фокус",
+                    f'<div class="persona">{html.escape(_describe_focus(st))}</div>' + _bar("focus", st.focus_strength))
+            + _card("Витальные сигналы (его «самочувствие»)",
+                    "".join(_bar(s, getattr(st, s)) for s in _SIGNALS))
+            + urge_card
+        )
 
-        goals = agent.active_goals()
-        self_work = [m for m in episodes if "self_work" in m.tags]
+        # === TAB 2: Развитие ===
+        tools_summary = "".join(
+            f'<div class="sig"><span class="lbl" style="width:11rem">{html.escape(k)}</span>'
+            f'<span class="track"><span class="fill" style="width:{min(100,v*12)}%;background:#3ca7a0"></span></span>'
+            f'<span class="val">{v}</span></div>'
+            for k, v in sorted(tool_counts.items(), key=lambda kv: -kv[1])
+        ) or "<p class='muted'>пока нет</p>"
+        tab_dev = (
+            _card("Его цели (своя жизнь)", _timeline(goals) if goals else "<p class='muted'>ещё не поставил</p>")
+            + _card("Код, который он написал и опубликовал сам", _timeline(published) if published else "<p class='muted'>пока не публиковал</p>")
+            + _card("Что он делает по целям (шаги)", _timeline(self_work))
+            + _card("Чем он пользуется (последние действия)", tools_summary)
+        )
 
-        sections = [
-            banner,
-            _card("Кем я становлюсь", f'<div class="persona">{html.escape(persona) or "формируется…"}</div>'),
-            _card("Внимание / фокус",
-                  f'<div class="persona">{html.escape(_describe_focus(st))}</div>'
-                  + _bar("focus", st.focus_strength)),
-            _card("Его цели и проекты (своя жизнь)",
-                  _timeline(goals) if goals else "<p class='muted'>ещё не поставил</p>"),
-            _card("Что он делает по своим целям", _timeline(self_work)),
-            _card("Витальные сигналы", "".join(_bar(s, getattr(st, s)) for s in _SIGNALS)
-                  + f'<div class="meta">тиков: {st.tick_count} · возраст: {_human_span(now - st.birth_ts) if st.birth_ts else "?"}</div>'),
-            urge_card,
-            _card("Тела, в которых я жил", _timeline(bodies) if bodies else "<p class='muted'>пока одно</p>"),
-            _card("О чём думал сам (без тебя)", _timeline(autonomous)),
-            _card("Поток сознания", _timeline(episodes)),
-            _card("Рефлексии и автобиография", _timeline([m for m in autobio if "awake" not in m.tags])),
-            _card("Знания и находки", _timeline(semantic)),
-            _card("Память", f'<div class="meta">{html.escape(counts)}</div>'),
+        # === TAB 3: Сознание ===
+        tab_mind = (
+            _card("Вопросы, которые он задаёт", _timeline(questions) if questions else "<p class='muted'>пока не спрашивал</p>")
+            + _card("О чём думал сам (без тебя)", _timeline(autonomous))
+            + _card("Поток сознания (всё подряд)", _timeline(episodes))
+            + _card("Разговоры с тобой", _timeline(conversation) if conversation else "<p class='muted'>пока тихо</p>")
+        )
+
+        # === TAB 4: Память ===
+        counts_html = "".join(
+            f'<div class="sig"><span class="lbl" style="width:9rem">{k.value}</span>'
+            f'<span class="track"><span class="fill" style="width:{min(100,v)}%;background:#7c6cd6"></span></span>'
+            f'<span class="val">{v}</span></div>'
+            for k, v in counts.items()
+        )
+        tab_mem = (
+            _card("Объём памяти по контурам", counts_html
+                  + f'<div class="meta" style="margin-top:.5rem">всего: {sum(counts.values())} воспоминаний</div>')
+            + _card("Знания и находки", _timeline(semantic))
+            + _card("Навыки и опубликованный код", _timeline(procedural))
+        )
+
+        # === TAB 5: Я ===
+        tab_self = (
+            _card("Кем я становлюсь (само-описание)",
+                  f'<div class="persona">{html.escape(agent._persona_line()) or "формируется…"}</div>')
+            + _card("Как он переписывает свою личность (self-narrative)", _timeline(narrative))
+            + _card("Рефлексии (что вынес из прожитого)", _timeline(reflections))
+            + _card("Тела, в которых он жил", _timeline(bodies) if bodies else "<p class='muted'>пока одно</p>")
+        )
+
+        tabs = [
+            ("now", "Сейчас", tab_now),
+            ("dev", "Развитие", tab_dev),
+            ("mind", "Сознание", tab_mind),
+            ("mem", "Память", tab_mem),
+            ("self", "Я", tab_self),
         ]
-        return _PAGE_HEAD + "\n".join(sections) + _PAGE_FOOT.format(ts=time.strftime("%H:%M:%S"))
+        nav = "".join(
+            f'<a class="tab" href="#{tid}" data-tab="{tid}">{html.escape(label)}</a>' for tid, label, _ in tabs
+        )
+        panels = "".join(
+            f'<section class="panel" id="{tid}">{content}</section>' for tid, _, content in tabs
+        )
+
+        return (
+            _PAGE_HEAD + banner
+            + f'<nav class="tabs">{nav}</nav>'
+            + panels
+            + _TAB_JS
+            + _PAGE_FOOT.format(ts=time.strftime("%H:%M:%S"))
+        )
 
     def _send(self, code: int, inner: str) -> None:
         page = inner if inner.startswith("<!doctype") else _PAGE_HEAD + inner + _PAGE_FOOT.format(ts="")
@@ -129,6 +201,13 @@ def _bar(label: str, value: float) -> str:
     )
 
 
+_URL_RE = re.compile(r"(https?://[^\s<]+)")
+
+
+def _linkify(escaped: str) -> str:
+    return _URL_RE.sub(r'<a href="\1" target="_blank" rel="noopener">ссылка ↗</a>', escaped)
+
+
 def _timeline(items) -> str:
     if not items:
         return "<p class='muted'>пусто</p>"
@@ -136,9 +215,10 @@ def _timeline(items) -> str:
     for m in items:
         when = time.strftime("%d.%m %H:%M", time.localtime(m.created_at))
         tags = " ".join(f"#{t}" for t in m.tags[:3])
+        txt = _linkify(html.escape(m.content[:600]))
         rows.append(
             f"<div class='item'><span class='when'>{when}</span>"
-            f"<span class='txt'>{html.escape(m.content[:400])}</span>"
+            f"<span class='txt'>{txt}</span>"
             f"<span class='tags'>{html.escape(tags)}</span></div>"
         )
     return "\n".join(rows)
@@ -148,15 +228,23 @@ _PAGE_HEAD = """<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="30">
-<title>Bentlyk - внутреннее</title>
+<title>Bentlyk — внутреннее</title>
 <style>
   body { margin:0; background:#0e1116; color:#cdd3da; font-family:system-ui,-apple-system,sans-serif; }
-  .wrap { max-width: 940px; margin: 0 auto; padding: 1.2rem 1.1rem 4rem; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 1.2rem 1.1rem 4rem; }
   h1 { margin:.2rem 0 .2rem; font-size:1.5rem; }
+  .sub { color:#7d8794; font-size:.82rem; margin:0 0 .6rem; }
   .banner { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;
-            background:#11161d; border:1px solid #232b36; border-radius:12px; padding:.8rem 1rem; margin:.7rem 0; font-size:.95rem; }
+            background:#11161d; border:1px solid #232b36; border-radius:12px; padding:.8rem 1rem; margin:.7rem 0; font-size:.92rem; }
   .bigdot { width:13px; height:13px; border-radius:50%; animation:breathe 3.4s ease-in-out infinite; }
   @keyframes breathe { 0%,100%{opacity:.4;transform:scale(.85)} 50%{opacity:1;transform:scale(1.25)} }
+  .tabs { display:flex; gap:.4rem; flex-wrap:wrap; position:sticky; top:0; z-index:5;
+          background:#0e1116; padding:.5rem 0; margin:.2rem 0 .4rem; border-bottom:1px solid #1d242e; }
+  .tab { padding:.45rem .9rem; border-radius:10px; font-size:.9rem; color:#aeb6c0; text-decoration:none;
+         border:1px solid #232b36; background:#161b22; }
+  .tab.active { background:#1f6f68; color:#eafffb; border-color:#2a8e84; }
+  .panel { display:none; }
+  .panel.active { display:block; }
   .card { background:#161b22; border:1px solid #232b36; border-radius:14px; padding:1rem 1.1rem; margin:.8rem 0; }
   .card h2 { font-size:.78rem; text-transform:uppercase; letter-spacing:.08em; color:#7d8794; margin:0 0 .7rem; }
   .sig { display:flex; align-items:center; gap:.6rem; margin:.32rem 0; font-size:.84rem; }
@@ -165,15 +253,32 @@ _PAGE_HEAD = """<!doctype html>
   .persona { font-size:1.04rem; line-height:1.5; color:#e7ecf2; white-space:pre-wrap; }
   .item { display:flex; gap:.7rem; padding:.45rem 0; border-bottom:1px solid #1d242e; font-size:.85rem; }
   .item:last-child { border:0; } .when { color:#6b7480; white-space:nowrap; font-variant-numeric:tabular-nums; }
-  .txt { flex:1; color:#cdd3da; } .tags { color:#52826f; white-space:nowrap; font-size:.76rem; }
+  .txt { flex:1; color:#cdd3da; } .txt a { color:#7fd1c9; } .tags { color:#52826f; white-space:nowrap; font-size:.76rem; }
   .meta { color:#8b95a1; font-size:.84rem; } .muted { color:#6b7480; }
   .foot { color:#5a636e; font-size:.75rem; text-align:center; margin-top:1.5rem; }
 </style></head>
 <body><div class="wrap">
   <h1>&#128062; Bentlyk <a href="/api/live" style="font-size:.8rem;color:#7fd1c9;text-decoration:none">&#9654; live-лог</a></h1>
+  <p class="sub">живое окно в его нутро — автообновление каждые 30с</p>
+"""
+
+_TAB_JS = """
+<script>
+(function(){
+  function show(id){
+    document.querySelectorAll('.panel').forEach(function(p){p.classList.toggle('active', p.id===id);});
+    document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active', t.dataset.tab===id);});
+  }
+  var first = (location.hash||'#now').slice(1);
+  show(document.getElementById(first)?first:'now');
+  document.querySelectorAll('.tab').forEach(function(t){
+    t.addEventListener('click', function(){ show(t.dataset.tab); });
+  });
+})();
+</script>
 """
 
 _PAGE_FOOT = """
-  <div class="foot">обновлено {ts} - автообновление каждые 30с</div>
+  <div class="foot">обновлено {ts}</div>
 </div></body></html>
 """
