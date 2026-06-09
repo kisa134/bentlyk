@@ -56,6 +56,6 @@ services:
       - key: BENTLYK_ALLOW_CODE       # run code in its sandbox (isolated container)
         value: "1"
       - key: BENTLYK_LOAD_PLUGINS     # load self-authored tools (bentlyk-self) as organs; "1" to enable
-        value: "0"
+        value: "1"
       - key: BENTLYK_TZ_OFFSET
         value: "3"
