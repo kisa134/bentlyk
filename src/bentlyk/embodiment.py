@@ -40,8 +40,13 @@ def cpu_temperature() -> float | None:
         return None
     for entries in (temps or {}).values():
         for e in entries:
-            if e.current:
-                return round(float(e.current), 1)
+            c = e.current
+            # Trust only a physically plausible reading. Virtualized/cloud hosts
+            # expose stub sensors that report -273.1°C (absolute zero) or 0 — a
+            # "no real thermometer here" sentinel, not a temperature. Believing it
+            # made the body narrate a phantom chill; honest senses return None.
+            if c is not None and 5.0 <= float(c) <= 130.0:
+                return round(float(c), 1)
     return None
 
 
