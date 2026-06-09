@@ -474,7 +474,9 @@ class Agent:
         attention.attend(self.state, goal.content, 0.8)
         memories = self.store.recall(goal.content, limit=5)
         mem = "\n".join(f"- {m.content}" for m in memories) or "(пока ничего)"
-        system = self.identity.system_preamble() + f"\nState: {self.state.describe()}."
+        from .fpf import FPF_LENS
+
+        system = self.identity.system_preamble() + f"\nState: {self.state.describe()}.\n\n" + FPF_LENS
         prompt = (
             f"My active goal: «{goal.content}».\nMy tools:\n{self.registry.describe()}\n"
             f"Relevant memory:\n{mem}\n\n"
@@ -482,7 +484,9 @@ class Agent:
             "to use to actually do it. Prefer real action that builds or improves something — "
             "write or improve your own code (write_program), read your own source (read_code), "
             "search the web (web_search), consult another model (consult_model) — over only "
-            "thinking. When the step is to write code, you MUST set tool to \"write_program\" with "
+            "thinking. You may `read_code` the file `fpf.py` to consult the full First Principles "
+            "Framework when a step needs rigorous reasoning. "
+            "When the step is to write code, you MUST set tool to \"write_program\" with "
             "args {\"path\": <a file path in my repo, e.g. tools/memory_graph.py>, \"spec\": <what "
             "the file should do, concretely>}. Always pick a real tool with COMPLETE args when the "
             "step is an action; use null only for pure reflection. Respond ONLY with JSON: "

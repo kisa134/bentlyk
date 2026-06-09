@@ -20,6 +20,7 @@ from enum import Enum
 from typing import Any
 
 from .actions import ToolRegistry
+from .fpf import FPF_LENS
 from .goals import GoalCandidate
 from .homeostasis import Tempo
 from .llm import Reasoner
@@ -85,7 +86,7 @@ class Planner:
 
         try:
             raw = self._reasoner.complete(
-                system=identity.system_preamble(),
+                system=identity.system_preamble() + "\n\n" + FPF_LENS,
                 prompt=self._prompt(state, tempo, goal, memories),
                 max_tokens=600,
             )
