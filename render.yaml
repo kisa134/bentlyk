@@ -41,6 +41,8 @@ services:
         sync: false
       - key: BENTLYK_MODEL            # optional — override the chat model
         sync: false
+      - key: BENTLYK_REASON_MODEL     # optional — a bigger brain for deliberation, e.g. claude-opus-4-6
+        sync: false
       - key: BENTLYK_CODE_MODEL       # optional — override the coding model
         sync: false
       # --- live semantic memory (embeddings on DeepInfra bge-m3) ---

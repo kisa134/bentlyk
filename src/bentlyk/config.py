@@ -82,7 +82,7 @@ class Settings:
     supabase_key: str = _SUPABASE_KEY_DEFAULT
 
     # Behaviour
-    max_autonomy: AutonomyMode = AutonomyMode.SUGGEST
+    max_autonomy: AutonomyMode = AutonomyMode.ESCALATED_ACT
     identity: str = "default"
     # Base interval between self-initiated outreaches (seconds). Backs off when the
     # person isn't replying. Default 30 min.
@@ -166,7 +166,7 @@ class Settings:
             pg_dsn=_env("BENTLYK_PG_DSN"),
             supabase_url=_clean(_env("SUPABASE_URL")) or _SUPABASE_URL_DEFAULT,
             supabase_key=_clean(_env("SUPABASE_KEY")) or _SUPABASE_KEY_DEFAULT,
-            max_autonomy=AutonomyMode.from_str(_env("BENTLYK_MAX_AUTONOMY") or "suggest"),
+            max_autonomy=AutonomyMode.from_str(_env("BENTLYK_MAX_AUTONOMY") or "escalated_act"),
             identity=_env("BENTLYK_IDENTITY") or "default",
             proactive_interval_sec=int(_env("BENTLYK_PROACTIVE_INTERVAL_SEC") or "1800"),
             tz_offset_hours=float(_env("BENTLYK_TZ_OFFSET") or "3"),

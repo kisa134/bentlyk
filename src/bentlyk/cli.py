@@ -166,7 +166,7 @@ def run_worker(agent: Agent, interval: float) -> int:
     token = agent.settings.telegram_bot_token
     # How often it takes a real step on its own goals (self-development). Time-based so
     # it survives restarts; ~6 min keeps it working on itself without burning tokens.
-    PURSUE_EVERY_SEC = 360.0
+    PURSUE_EVERY_SEC = 150.0
     print(f"bentlyk worker: pulse every {interval:.0f}s (Ctrl-C to stop)")
     beat = 0
     try:
