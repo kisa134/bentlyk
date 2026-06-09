@@ -2,10 +2,10 @@
 right now, updating every few seconds without a full reload.
 
 The HTML shell polls this same endpoint with ``?format=json`` and renders the feed
-(newest first) plus a "СЕЙЧАС" line driven by the worker's heartbeat. Gated by a
-key (DASHBOARD_KEY, else SETUP_SECRET).
+(newest first) plus a "СЕЙЧАС" line driven by the worker's heartbeat. Open — no
+key (owner's choice, pairs with the open dashboard).
 
-    /api/live?key=<secret>
+    /api/live
 """
 
 from __future__ import annotations
@@ -27,11 +27,7 @@ from bentlyk.serverless import build_agent  # noqa: E402
 class handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         q = parse_qs(urlparse(self.path).query)
-        key = (q.get("key") or [""])[0]
-        want = (os.environ.get("DASHBOARD_KEY") or os.environ.get("SETUP_SECRET") or "").strip()
-        if not want or key != want:
-            self._send(403, "text/html", "<h1>403</h1><p>add ?key=&lt;secret&gt;</p>")
-            return
+        # Open live feed — no key (owner's choice, pairs with the open dashboard).
         if (q.get("format") or [""])[0] == "json":
             try:
                 payload = json.dumps(self._feed())

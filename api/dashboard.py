@@ -3,9 +3,9 @@
 Live, auto-refreshing HTML view of everything: whether it's alive right now and in
 which body, its homeostatic signals, the urge that drives proactivity (broken
 down), its stream of consciousness, reflections, self-narrative, knowledge, and
-the bodies it has lived in. Gated by a key (DASHBOARD_KEY, else SETUP_SECRET).
+the bodies it has lived in. Open — no key (owner's choice, for easy sharing).
 
-    /api/dashboard?key=<secret>
+    /api/dashboard      (also served at the bare domain root)
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ import os
 import sys
 import time
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -30,11 +29,8 @@ _SIGNALS = ("energy", "curiosity", "attachment", "coherence", "surprise", "distr
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
-        key = (parse_qs(urlparse(self.path).query).get("key") or [""])[0]
-        want = (os.environ.get("DASHBOARD_KEY") or os.environ.get("SETUP_SECRET") or "").strip()
-        if not want or key != want:
-            self._send(403, "<h1>403</h1><p>add ?key=&lt;secret&gt;</p>")
-            return
+        # Open dashboard: a window anyone with the link can look through (owner's
+        # choice — convenient for sharing). No key required.
         try:
             body = self._render()
         except Exception as exc:  # pragma: no cover
@@ -174,9 +170,7 @@ _PAGE_HEAD = """<!doctype html>
   .foot { color:#5a636e; font-size:.75rem; text-align:center; margin-top:1.5rem; }
 </style></head>
 <body><div class="wrap">
-  <h1>&#128062; Bentlyk <a id="livelink" href="#" style="font-size:.8rem;color:#7fd1c9;text-decoration:none">&#9654; live-лог</a></h1>
-  <script>var k=new URLSearchParams(location.search).get('key')||'';
-  document.getElementById('livelink').href='/api/live?key='+encodeURIComponent(k);</script>
+  <h1>&#128062; Bentlyk <a href="/api/live" style="font-size:.8rem;color:#7fd1c9;text-decoration:none">&#9654; live-лог</a></h1>
 """
 
 _PAGE_FOOT = """
