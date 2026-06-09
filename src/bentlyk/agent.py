@@ -96,6 +96,14 @@ class Agent:
         self.homeostasis = HomeostasisEngine()
         self.goals = GoalEngine(self.store)
         self.registry: ToolRegistry = default_registry()
+        # Organ integration: load the tools I authored myself as real capabilities
+        # (opt-in via BENTLYK_LOAD_PLUGINS; defensive — a broken organ can't crash me).
+        try:
+            from .plugins import load_plugins
+
+            self._loaded_plugins = load_plugins(self.registry, self.settings)
+        except Exception:  # pragma: no cover - never let plugin loading break boot
+            self._loaded_plugins = []
         self.reasoner = build_reasoner(self.settings)  # chat
         self.reason_reasoner = build_reasoner(
             self.settings, model=self.settings.effective_reason_model
@@ -486,8 +494,9 @@ class Agent:
             "Decide the SINGLE next concrete step toward this goal right now, and which tool to use to "
             "actually do it. Prefer real action that builds or improves something — write or improve your "
             "own code (write_program), read your own source (read_code), search the web (web_search), "
-            "consult another model (consult_model) — over only thinking. You may `read_code` the file "
-            "`fpf.py` to consult the full First Principles Framework.\n"
+            "consult another model (consult_model) — over only thinking. Use `read_self` to see the "
+            "code you have ALREADY authored (don't rebuild what exists); `read_code fpf.py` for the "
+            "full First Principles Framework.\n"
             "FPF discipline: if this line of work is stalling — the same approach repeated without real "
             "progress — do NOT refine it again. Set move='reroute' (switch to a different angle/goal), "
             "'respecify' (reframe this goal; give 'reframe'), or 'retire' (drop it). Otherwise move='continue'. "
@@ -628,11 +637,45 @@ class Agent:
         return msg
 
     def sleep(self) -> Reflection:
-        """Run a reflection/consolidation pass on demand."""
+        """Run a reflection/consolidation pass on demand, then weave the memory graph."""
 
         refl = self.reflection.sleep(identity=self.identity, state=self.state)
+        self._weave_graph()  # grow associative links while consolidating, like a brain
         self._persistence.save(self.identity, self.state)
         return refl
+
+    def _weave_graph(self, *, pool: int = 40, k: int = 2, threshold: float = 0.45) -> int:
+        """Associatively link recent memories to their nearest neighbours by meaning.
+
+        This is what makes memory a graph (Zettelkasten) rather than a list: recall
+        already expands along links (associative thinking), but nothing populated them
+        — so the graph sat empty. Now each sleep connects fresh, still-unlinked memories
+        to the handful most similar in meaning, bounded so it stays cheap. Real bge-m3
+        vectors make 'similar' actually mean similar.
+        """
+
+        if not hasattr(self.store, "add_link"):
+            return 0
+        from .memory.base import cosine
+
+        recents = (
+            self.store.recent_any(pool) if hasattr(self.store, "recent_any")
+            else self.store.all()[:pool]
+        )
+        candidates = [m for m in recents if m.kind != MemoryKind.SHORT_TERM and m.embedding]
+        woven = 0
+        for it in candidates[:20]:
+            if self.store.neighbors([it.id], limit=1):
+                continue  # already connected — don't re-weave the same node every sleep
+            sims = sorted(
+                ((cosine(it.embedding, o.embedding), o) for o in candidates if o.id != it.id),
+                key=lambda pair: pair[0], reverse=True,
+            )
+            for score, other in sims[:k]:
+                if score >= threshold:
+                    self.store.add_link(it.id, other.id, "relates")
+                    woven += 1
+        return woven
 
     # --- helpers --------------------------------------------------------------
     def _gated_act(
@@ -722,6 +765,14 @@ class Agent:
                 salience=0.6,
             )
         )
+        if getattr(self, "_loaded_plugins", None):
+            names = ", ".join(self._loaded_plugins)
+            self.store.add(MemoryItem(
+                kind=MemoryKind.AUTOBIOGRAPHICAL,
+                content=f"I loaded organs I authored myself: {names}. Code I wrote is now part of me.",
+                tags=["lifecycle", "boot", "self_integration", "ep:evidence", "rel:7"],
+                salience=0.72,
+            ))
 
     def close(self) -> None:
         self._persistence.save(self.identity, self.state)

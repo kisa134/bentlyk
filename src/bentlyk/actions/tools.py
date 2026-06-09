@@ -339,20 +339,33 @@ def _write_program(args: dict[str, Any], context: dict[str, Any]) -> ActionResul
     if not code:
         return ActionResult(ok=False, output="model returned no code", surprise=0.3)
 
+    # Close the write→validate→learn loop: syntax-check my own Python before I trust
+    # it. This is feedback I never had before (I used to write into the void and loop).
+    validation = ""
+    if path.endswith(".py"):
+        try:
+            compile(code, path, "exec")
+            validation = " | syntax OK"
+        except SyntaxError as exc:
+            validation = f" | SYNTAX ERROR line {exc.lineno}: {exc.msg}"
+
     from ..github import commit_file
 
     msg = str(args.get("message") or f"bentlyk: write {path}")
     result = commit_file(settings.self_repo, path, code, msg, settings.gh_token)
-    ok = result.startswith("committed")
+    committed = result.startswith("committed")
+    # Valid only if it both published AND (for Python) parses — a syntax error is a
+    # real failure to learn from, not a success, even though the commit went through.
+    ok = committed and "SYNTAX ERROR" not in validation
     store = context.get("store")
-    if store is not None and ok:
+    if store is not None and committed:
         store.add(MemoryItem(
             kind=MemoryKind.PROCEDURAL,
-            content=f"I wrote and published code: {path} — {spec[:120]}",
-            tags=["self_work", "code", "published"],
+            content=f"I wrote and published code: {path} — {spec[:120]}{validation}",
+            tags=["self_work", "code", "published", "ep:evidence", "rel:7" if ok else "rel:4"],
             salience=0.7,
         ))
-    return ActionResult(ok=ok, output=result, surprise=0.0 if ok else 0.3)
+    return ActionResult(ok=ok, output=result + validation, surprise=0.0 if ok else 0.3)
 
 
 def _read_code(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
@@ -393,6 +406,23 @@ def _read_code(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     except OSError as exc:
         return ActionResult(ok=False, output=f"could not read: {exc}")
     return ActionResult(ok=True, output=text[:6000])
+
+
+def _read_self(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Read or list my own workshop repo (bentlyk-self) — the code I've authored.
+
+    Closes the 'know my parts' gap: I can see what I've already built instead of
+    writing into the void and forgetting it. Pass a path to read a file, or omit it
+    (or give a directory) to list. Defaults to my tools/ directory.
+    """
+
+    settings = context.get("settings")
+    if settings is None or not settings.gh_token:
+        return ActionResult(ok=False, output="no GitHub token configured (BENTLYK_GH_TOKEN)")
+    from ..github import read_repo
+
+    path = str(args.get("path") or "tools").strip()
+    return ActionResult(ok=True, output=read_repo(settings.self_repo, path, settings.gh_token))
 
 
 def _workdir_write(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
@@ -497,6 +527,13 @@ def build_builtin_tools() -> list[Tool]:
             risk=RiskLevel.NONE,
             reversible=True,
             handler=_read_code,
+        ),
+        Tool(
+            name="read_self",
+            description="read/list my workshop repo (bentlyk-self) — the code I have authored myself",
+            risk=RiskLevel.NONE,
+            reversible=True,
+            handler=_read_self,
         ),
         Tool(
             name="web_search",

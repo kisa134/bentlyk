@@ -103,6 +103,7 @@ class Settings:
     # opt-in local code execution. Off by default; never enable on the public webhook.
     workdir: str = ""  # sandbox dir for local files/code (default ~/.bentlyk/work)
     allow_code: bool = False  # BENTLYK_ALLOW_CODE=1 to let it run code locally
+    load_plugins: bool = False  # BENTLYK_LOAD_PLUGINS=1 to load self-authored tools as organs
 
     @property
     def llm_key(self) -> str:
@@ -176,6 +177,7 @@ class Settings:
             self_repo=_env("BENTLYK_SELF_REPO") or "kisa134/bentlyk-self",
             workdir=_env("BENTLYK_WORKDIR"),
             allow_code=_env("BENTLYK_ALLOW_CODE") in ("1", "true", "yes"),
+            load_plugins=_env("BENTLYK_LOAD_PLUGINS") in ("1", "true", "yes"),
         )
 
     @property

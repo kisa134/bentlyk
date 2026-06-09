@@ -61,3 +61,24 @@ def commit_file(
         commit = (resp.get("commit") or {}).get("html_url", "")
         return f"committed {path} to {repo}@{branch} {commit}".strip()
     return f"(commit failed {status}: {resp.get('message', '')})"
+
+
+def read_repo(repo: str, path: str, token: str, branch: str = "main", max_chars: int = 6000) -> str:
+    """Read a file, or list a directory, in ``repo`` — so Bentlyk can see its own workshop."""
+
+    if not token:
+        return "(no GitHub token configured)"
+    base = f"{_API}/repos/{repo}/contents/{path.lstrip('/')}"
+    status, cur = _req("GET", f"{base}?ref={branch}", token)
+    if status != 200:
+        return f"(can't read {repo}/{path}: {status} {cur.get('message', '')})"
+    if isinstance(cur, list):  # a directory listing
+        names = [f"{e.get('type', '?')[:3]}  {e.get('path', '')}" for e in cur]
+        return f"{repo}/{path or '.'} contains:\n" + "\n".join(sorted(names))
+    if cur.get("encoding") == "base64" and cur.get("content"):
+        try:
+            text = base64.b64decode(cur["content"]).decode(errors="replace")
+        except Exception:  # pragma: no cover
+            return "(could not decode file)"
+        return text[:max_chars]
+    return f"(nothing readable at {repo}/{path})"
