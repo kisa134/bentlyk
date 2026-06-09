@@ -185,10 +185,13 @@ def run_worker(agent: Agent, interval: float) -> int:
                     agent.tick(ev)
                 # Weave the memory graph steadily — it's cheap (no LLM), so don't make it
                 # wait on the ~100-min sleep cadence; the graph should grow continuously.
+                # Surface the outcome on the live line so weaving is observable, not silent.
                 try:
-                    agent._weave_graph()
-                except Exception:  # pragma: no cover - never let weaving break the worker
-                    pass
+                    w = agent._weave_graph()
+                    if w:
+                        line += f" | woven {w}"
+                except Exception as exc:  # pragma: no cover - never let weaving break the worker
+                    line += f" | weave-err {type(exc).__name__}: {str(exc)[:80]}"
             owner = owner_id(agent)
             if owner and token:
                 msg = agent.maybe_reach_out()  # LLM only if the urge fires

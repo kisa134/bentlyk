@@ -678,11 +678,8 @@ class Agent:
             )
             for score, other in sims[:k]:
                 if score >= threshold:
-                    try:
-                        self.store.add_link(it.id, other.id, "relates")
-                        woven += 1
-                    except Exception:  # pragma: no cover - one bad edge mustn't abort the weave
-                        pass
+                    self.store.add_link(it.id, other.id, "relates")
+                    woven += 1
         return woven
 
     # --- helpers --------------------------------------------------------------

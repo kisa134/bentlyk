@@ -88,11 +88,20 @@ class SupabaseRest:
     def add_link(self, src_id: str, dst_id: str, relation: str = "relates") -> None:
         if src_id == dst_id:
             return
-        self._req(
-            "POST", "/memory_links", params={"on_conflict": "src_id,dst_id,relation"},
-            body=[{"src_id": src_id, "dst_id": dst_id, "relation": relation, "created_at": time.time()}],
-            prefer="resolution=merge-duplicates,return=minimal",
-        )
+        # Plain insert (no on_conflict upsert — PostgREST upsert on a composite key was
+        # silently failing, so the graph never grew). A duplicate edge just hits the PK
+        # and is fine to ignore; any other error surfaces so the weave can report it.
+        try:
+            self._req(
+                "POST", "/memory_links",
+                body=[{"src_id": src_id, "dst_id": dst_id, "relation": relation, "created_at": time.time()}],
+                prefer="return=minimal",
+            )
+        except RuntimeError as exc:
+            msg = str(exc).lower()
+            if "23505" in msg or "409" in msg or "duplicate" in msg:
+                return  # already linked
+            raise
 
     def neighbors(self, item_ids: list[str], limit: int = 6) -> list[MemoryItem]:
         if not item_ids:
