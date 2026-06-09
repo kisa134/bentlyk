@@ -487,10 +487,23 @@ class Agent:
         from .fpf import FPF_LENS
 
         system = self.identity.system_preamble() + f"\nState: {self.state.describe()}.\n\n" + FPF_LENS
+        # Convene my internal team — analyst, engineer, FPF planner — for real deliberative
+        # depth before I decide. Their short takes feed the decision below, where I act as
+        # the chair and synthesise one move. Uses the deeper reasoning brain.
+        council = ""
+        if getattr(self.settings, "council", False):
+            from .council import convene
+
+            council = convene(
+                self.reason_reasoner, system,
+                f"My goal: «{goal.content}».\nRelevant memory:\n{mem}\nRecently tried: {archive}",
+                code_reasoner=self.code_reasoner,
+            )
         prompt = (
             f"My active goal: «{goal.content}».\nMy tools:\n{self.registry.describe()}\n"
             f"Relevant memory:\n{mem}\n\n"
-            f"Recently attempted (your archive — keep a DIVERSE front, do NOT just repeat these):\n{archive}\n\n"
+            + (f"My internal team advised (synthesise them, don't just obey one):\n{council}\n\n" if council else "")
+            + f"Recently attempted (your archive — keep a DIVERSE front, do NOT just repeat these):\n{archive}\n\n"
             "Decide the SINGLE next concrete step toward this goal right now, and which tool to use to "
             "actually do it. Prefer real action that builds or improves something — write or improve your "
             "own code (write_program), read your own source (read_code), search the web (web_search), "

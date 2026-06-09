@@ -408,6 +408,26 @@ def _read_code(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     return ActionResult(ok=True, output=text[:6000])
 
 
+def _deliberate(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
+    """Convene my internal council — analyst, engineer, FPF planner — on a question.
+
+    Lets me think as a team of roles, not one voice, whenever a problem deserves it.
+    """
+
+    from ..council import convene
+
+    reasoner = context.get("reason_reasoner") or context.get("reasoner")
+    if reasoner is None:  # pragma: no cover - reasoner always present in the loop
+        return ActionResult(ok=False, output="no reasoner available")
+    question = str(args.get("question") or args.get("text") or "").strip()
+    if not question:
+        return ActionResult(ok=False, output="need a 'question' to deliberate on")
+    identity = context.get("identity")
+    system_base = identity.system_preamble() if identity is not None else "You are Bentlyk."
+    voices = convene(reasoner, system_base, question, code_reasoner=context.get("code_reasoner"))
+    return ActionResult(ok=True, output=voices or "(the council was silent)")
+
+
 def _read_self(args: dict[str, Any], context: dict[str, Any]) -> ActionResult:
     """Read or list my own workshop repo (bentlyk-self) — the code I've authored.
 
@@ -534,6 +554,13 @@ def build_builtin_tools() -> list[Tool]:
             risk=RiskLevel.NONE,
             reversible=True,
             handler=_read_self,
+        ),
+        Tool(
+            name="deliberate",
+            description="convene my internal council (analyst, engineer, FPF planner) on a hard question",
+            risk=RiskLevel.NONE,
+            reversible=True,
+            handler=_deliberate,
         ),
         Tool(
             name="web_search",

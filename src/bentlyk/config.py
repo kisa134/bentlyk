@@ -104,6 +104,7 @@ class Settings:
     workdir: str = ""  # sandbox dir for local files/code (default ~/.bentlyk/work)
     allow_code: bool = False  # BENTLYK_ALLOW_CODE=1 to let it run code locally
     load_plugins: bool = False  # BENTLYK_LOAD_PLUGINS=1 to load self-authored tools as organs
+    council: bool = True  # BENTLYK_COUNCIL=0 to disable the internal roles council (saves tokens)
 
     @property
     def llm_key(self) -> str:
@@ -178,6 +179,7 @@ class Settings:
             workdir=_env("BENTLYK_WORKDIR"),
             allow_code=_env("BENTLYK_ALLOW_CODE") in ("1", "true", "yes"),
             load_plugins=_env("BENTLYK_LOAD_PLUGINS") in ("1", "true", "yes"),
+            council=_env("BENTLYK_COUNCIL", "1") in ("1", "true", "yes"),
         )
 
     @property
