@@ -474,34 +474,42 @@ class Agent:
         attention.attend(self.state, goal.content, 0.8)
         memories = self.store.recall(goal.content, limit=5)
         mem = "\n".join(f"- {m.content}" for m in memories) or "(пока ничего)"
+        recent_sigs = self._recent_signatures(8)
+        archive = ", ".join(f"{s}×{recent_sigs.count(s)}" for s in dict.fromkeys(recent_sigs)) or "(пусто)"
         from .fpf import FPF_LENS
 
         system = self.identity.system_preamble() + f"\nState: {self.state.describe()}.\n\n" + FPF_LENS
         prompt = (
             f"My active goal: «{goal.content}».\nMy tools:\n{self.registry.describe()}\n"
             f"Relevant memory:\n{mem}\n\n"
-            "Decide the SINGLE next concrete step toward this goal right now, and which tool "
-            "to use to actually do it. Prefer real action that builds or improves something — "
-            "write or improve your own code (write_program), read your own source (read_code), "
-            "search the web (web_search), consult another model (consult_model) — over only "
-            "thinking. You may `read_code` the file `fpf.py` to consult the full First Principles "
-            "Framework when a step needs rigorous reasoning. "
-            "When the step is to write code, you MUST set tool to \"write_program\" with "
-            "args {\"path\": <a file path in my repo, e.g. tools/memory_graph.py>, \"spec\": <what "
-            "the file should do, concretely>}. Always pick a real tool with COMPLETE args when the "
-            "step is an action; use null only for pure reflection. Respond ONLY with JSON: "
-            "{\"step\": <short>, \"tool\": <tool name or null>, \"args\": {<tool args>}, "
-            "\"done\": <true if the goal is now complete>}."
+            f"Recently attempted (your archive — keep a DIVERSE front, do NOT just repeat these):\n{archive}\n\n"
+            "Decide the SINGLE next concrete step toward this goal right now, and which tool to use to "
+            "actually do it. Prefer real action that builds or improves something — write or improve your "
+            "own code (write_program), read your own source (read_code), search the web (web_search), "
+            "consult another model (consult_model) — over only thinking. You may `read_code` the file "
+            "`fpf.py` to consult the full First Principles Framework.\n"
+            "FPF discipline: if this line of work is stalling — the same approach repeated without real "
+            "progress — do NOT refine it again. Set move='reroute' (switch to a different angle/goal), "
+            "'respecify' (reframe this goal; give 'reframe'), or 'retire' (drop it). Otherwise move='continue'. "
+            "Report 'lesson': one concrete thing you learned from your most recent outcome above.\n"
+            "When the step is to write code, set tool to \"write_program\" with args "
+            "{\"path\": <file path, e.g. tools/memory_graph.py>, \"spec\": <concretely what it does>}. "
+            "Pick a real tool with COMPLETE args for actions; use null only for pure reflection. "
+            "Respond ONLY with JSON: {\"step\": <short>, \"tool\": <tool name or null>, \"args\": {<args>}, "
+            "\"move\": \"continue|reroute|respecify|retire\", \"reframe\": <new goal text or null>, "
+            "\"lesson\": <short or null>, \"done\": <true if the goal is now complete>}."
         )
         try:
-            data = _extract_json(self.reasoner.complete(system=system, prompt=prompt, max_tokens=600)) or {}
+            data = _extract_json(self.reasoner.complete(system=system, prompt=prompt, max_tokens=700)) or {}
         except Exception as exc:
             return f"план не вышел: {exc}"
         step = str(data.get("step") or "обдумать цель")[:200]
         toolname = data.get("tool")
+        sig = self._step_signature(toolname, data.get("args"))
+        # Plan record (a decision) — kept apart from the run and the lesson (FPF facets).
         self.store.add(MemoryItem(
             kind=MemoryKind.EPISODIC, content=f"self-work [{goal.content[:50]}]: {step}",
-            tags=["self_work"], salience=0.55,
+            tags=["self_work", f"sig:{sig}", "ep:decision", "rel:4"], salience=0.55,
         ))
         line = f"цель «{goal.content[:35]}» → {step[:55]}"
         if toolname and self.registry.get(str(toolname)):
@@ -513,22 +521,69 @@ class Agent:
             )
             ok = bool(res and res.ok) and gd == GateDecision.ALLOW
             self.homeostasis.settle(self.state, success=ok)
-            # Record the real outcome so I can see what worked, and learn from failures.
+            # Run record (evidence of what actually happened), tagged with rough reliability.
             outcome = (res.output if res else "(not run)")[:240]
             self.store.add(MemoryItem(
                 kind=MemoryKind.EPISODIC,
                 content=f"used {toolname} → {gd.name.lower()}: {outcome}",
-                tags=["self_work", "tool_result"] + (["success"] if ok else ["failure"]),
+                tags=["self_work", "tool_result", "ep:evidence", "rel:7" if ok else "rel:5"]
+                     + (["success"] if ok else ["failure"]),
                 salience=0.5 if ok else 0.65,
             ))
             line += f" | {toolname}:{gd.name.lower()}"
+        # Lesson (evidence distilled) — what I learned, separate from plan and outcome.
+        lesson = str(data.get("lesson") or "").strip()
+        if lesson:
+            self.store.add(MemoryItem(
+                kind=MemoryKind.SEMANTIC, content=f"Урок: {lesson[:240]}",
+                tags=["self_work", "lesson", "ep:evidence", "rel:6"], salience=0.62,
+            ))
+        # Admissible moves (FPF evolution loop): escape a stalled line instead of looping.
+        move = str(data.get("move") or "continue").lower()
+        # Loop-guard backstop: if I've already repeated this exact approach, force a reroute
+        # even if I didn't choose one (FPF sunset rule — no silent loops).
+        if move == "continue" and recent_sigs.count(sig) >= 2:
+            move = "reroute"
+            line += " | (застрял — принудительный разворот)"
         if data.get("done"):
             goal.tags = [t for t in goal.tags if t != "active"] + ["done"]
             self.store.update(goal)
             line += " | цель закрыта"
+        elif move == "respecify" and data.get("reframe"):
+            goal.content = str(data["reframe"])[:300]
+            self.store.update(goal)
+            line += " | переформулировал цель (respecify)"
+        elif move == "retire":
+            goal.tags = [t for t in goal.tags if t != "active"] + ["retired"]
+            self.store.update(goal)
+            self._generate_self_goals()
+            line += " | закрыл тупик (retire)"
+        elif move == "reroute":
+            self.state.focus = ""
+            self.state.focus_strength = 0.0
+            others = [g for g in goals if g.id != goal.id]
+            if others:
+                attention.attend(self.state, others[0].content, 0.6)
+            line += " | сменил направление (reroute)"
         self._clamp_autonomy()
         self._persistence.save(self.identity, self.state)
         return line
+
+    @staticmethod
+    def _step_signature(toolname: object, args: object) -> str:
+        """A compact fingerprint of an attempt (tool + its target), for loop detection."""
+        a = args if isinstance(args, dict) else {}
+        target = a.get("path") or a.get("query") or str(a.get("spec") or "")[:40] or ""
+        return f"{toolname or 'none'}:{target}"[:80]
+
+    def _recent_signatures(self, limit: int = 8) -> list[str]:
+        """Recent attempt fingerprints, newest first — the FPF 'archive' for diversity."""
+        sigs: list[str] = []
+        for m in self.store.recent(MemoryKind.EPISODIC, limit=40):
+            for t in m.tags:
+                if t.startswith("sig:"):
+                    sigs.append(t[4:])
+        return sigs[:limit]
 
     def proactive_message(self, reason: str = "") -> str:
         """Compose a self-initiated message: a real question or a request to grow.

@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Iterable, Protocol
 
-from .base import MemoryItem, MemoryKind, cosine, embed
+from .base import MemoryItem, MemoryKind, cosine, embed, reliability_of
 
 
 class MemoryStore(Protocol):
@@ -166,7 +166,7 @@ class SqliteMemoryStore:
         for it in items:
             sim = cosine(q, it.embedding)
             recency = 1.0 / (1.0 + it.age_days(now))
-            score = 0.6 * sim + 0.25 * it.salience + 0.15 * recency
+            score = 0.55 * sim + 0.2 * it.salience + 0.12 * recency + 0.13 * reliability_of(it.tags)
             scored.append((score, it))
 
         scored.sort(key=lambda pair: pair[0], reverse=True)

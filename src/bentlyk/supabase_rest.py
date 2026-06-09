@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from typing import Iterable
 
-from .memory.base import MemoryItem, MemoryKind, cosine, embed
+from .memory.base import MemoryItem, MemoryKind, cosine, embed, reliability_of
 from .self_model import DynamicState, IdentityCore
 
 _PRUNE_FLOOR = 0.08
@@ -140,7 +140,8 @@ class SupabaseRest:
         items = self.all() if kinds is None else [m for k in kinds for m in self.all(k)]
         scored = sorted(
             (
-                (0.6 * cosine(q, it.embedding) + 0.25 * it.salience + 0.15 / (1 + it.age_days(now)), it)
+                (0.55 * cosine(q, it.embedding) + 0.2 * it.salience
+                 + 0.12 / (1 + it.age_days(now)) + 0.13 * reliability_of(it.tags), it)
                 for it in items
             ),
             key=lambda pair: pair[0],

@@ -123,5 +123,20 @@ def cosine(a: list[float], b: list[float]) -> float:
     return max(-1.0, min(1.0, dot))  # both are unit vectors
 
 
+def reliability_of(tags: list[str]) -> float:
+    """FPF reliability of a memory in [0,1], read from a ``rel:N`` tag (N in 0..9).
+
+    Lets recall trust evidence over assumptions. Untagged memories sit at a neutral
+    0.5 so legacy memories are neither boosted nor penalised.
+    """
+    for t in tags:
+        if t.startswith("rel:"):
+            try:
+                return max(0.0, min(1.0, int(t[4:]) / 9.0))
+            except ValueError:
+                return 0.5
+    return 0.5
+
+
 def _tokenize(text: str) -> list[str]:
     return [t for t in "".join(c.lower() if c.isalnum() else " " for c in text).split() if t]
