@@ -132,6 +132,12 @@ class SupabaseRest:
         params = {"select": "*", "order": "created_at.desc", "limit": str(limit)}
         return [_from_row(r) for r in self._req("GET", "/memory", params=params)]
 
+    def links(self, limit: int = 600) -> list[tuple[str, str]]:
+        """All graph edges (src, dst) — for visualising the memory graph."""
+        rows = self._req("GET", "/memory_links",
+                         params={"select": "src_id,dst_id", "limit": str(limit)})
+        return [(r.get("src_id"), r.get("dst_id")) for r in rows if r.get("src_id") and r.get("dst_id")]
+
     def recall(
         self, query: str, *, kinds: Iterable[MemoryKind] | None = None, limit: int = 8
     ) -> list[MemoryItem]:

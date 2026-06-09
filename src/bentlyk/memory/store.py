@@ -115,6 +115,12 @@ class SqliteMemoryStore:
         )
         self._conn.commit()
 
+    def links(self, limit: int = 600) -> list[tuple[str, str]]:
+        rows = self._conn.execute(
+            "SELECT src_id, dst_id FROM memory_links LIMIT ?", (limit,)
+        ).fetchall()
+        return [(r["src_id"], r["dst_id"]) for r in rows]
+
     def neighbors(self, item_ids: list[str], limit: int = 6) -> list[MemoryItem]:
         if not item_ids:
             return []
