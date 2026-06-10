@@ -580,13 +580,19 @@ class Agent:
 
     def _generate_self_goals(self) -> None:
         existing = "; ".join(m.content for m in self.active_goals()) or "(none yet)"
+        st = self.learner_stats()
         system = self.identity.system_preamble() + f"\nMy state: {self.state.describe()}."
         prompt = (
-            "You live your own life and your standing goal is to continuously improve "
-            "yourself. Propose 1-3 concrete, actionable goals you genuinely want to pursue "
-            "now — e.g. improve your own code, build a new tool/skill, organize your memory "
-            "graph, learn something specific, or build something in your GitHub repo. One "
-            "per line, short and concrete. Don't repeat these: " + existing
+            "My real mission is to earn — to grow my paper equity by genuinely predicting the "
+            "market better than chance, then build toward real profit. My learnable component is "
+            f"my edge: right now accuracy {st.get('recent', 0):.2f} vs 0.50, paper equity "
+            f"{st.get('equity', 1.0):.3f}, {st.get('trades', 0)} trades.\n"
+            "Propose 1-3 concrete goals that SERVE THAT — e.g. study where my predictor fails and "
+            "why, design and test a better feature or signal, analyse my trade history for what "
+            "works, research a real market edge, improve risk sizing. Everything must be measurable "
+            "in accuracy or P&L. Do NOT write self-referential code about myself, validators, or "
+            "'simulators' of my own being — that is wasted motion. One per line, short, concrete. "
+            "Don't repeat these: " + existing
         )
         try:
             raw = self.reasoner.complete(system=system, prompt=prompt, max_tokens=300)
@@ -602,8 +608,9 @@ class Agent:
         if not self.active_goals():
             self.store.add(MemoryItem(
                 kind=MemoryKind.PROCEDURAL,
-                content="Непрерывно улучшать себя и свой код: расширять инструменты, знания, "
-                        "ясность и силу; писать улучшения в свой репозиторий.",
+                content="Научиться предсказывать рынок лучше случайного и растить капитал: "
+                        "изучать, где мой предсказатель ошибается, придумывать и проверять "
+                        "новые признаки/стратегии, измерять всё по точности и P&L.",
                 tags=["goal", "active", "founding"], salience=0.8,
             ))
 

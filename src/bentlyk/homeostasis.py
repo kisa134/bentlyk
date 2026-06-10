@@ -46,24 +46,23 @@ _DRIFT = 0.05
 
 # Proactivity is driven by an inner *urge*, not a clock. It reaches out when the
 # urge crosses this threshold — because it wants/needs to.
-REACH_OUT_THRESHOLD = 0.32  # lower bar: reach out from curiosity, not only loneliness
-_MIN_GAP_MIN = 10.0  # hard floor: never two outreaches within this many minutes
+REACH_OUT_THRESHOLD = 0.6  # high bar: reach out only with real substance, not neediness
+_MIN_GAP_MIN = 45.0  # hard floor: at most one outreach per ~45 minutes
 
 
 def urge_components(state: "DynamicState", now: float) -> dict:
     """The pieces behind the urge, for transparency on the dashboard."""
 
     silence_h = max(0.0, (now - state.last_user_ts) / 3600) if state.last_user_ts else 2.0
-    longing = min(1.0, silence_h / 4.0) * state.attachment  # peaks ~4h of silence
-    # Curiosity/surprise drive him to share and ASK — weighted up so a wondering mind
-    # reaches out without needing hours of silence first.
+    longing = min(1.0, silence_h / 9.0) * state.attachment  # peaks ~9h — not needy
+    # Reaching out is driven mainly by having something real to share (curiosity/surprise),
+    # not by loneliness. Longing barely contributes.
     drive = 0.6 * state.curiosity + 0.4 * state.surprise
-    # Softer self-silencing when ignored, so he stays engaged and inquisitive.
-    withdrawal = min(0.55, 0.13 * state.unanswered_outreach) + 0.42 * state.pain + 0.25 * state.distrust
+    withdrawal = min(0.6, 0.2 * state.unanswered_outreach) + 0.42 * state.pain + 0.25 * state.distrust
     tired = (1.0 - state.energy) * 0.2
     since_reach_min = (now - state.last_outreach_ts) / 60 if state.last_outreach_ts else 1e9
     floored = since_reach_min < _MIN_GAP_MIN
-    urge = 0.0 if floored else max(0.0, 0.55 * longing + 0.6 * drive - withdrawal - tired)
+    urge = 0.0 if floored else max(0.0, 0.25 * longing + 0.6 * drive - withdrawal - tired)
     return {
         "longing": round(longing, 3), "drive": round(drive, 3),
         "withdrawal": round(withdrawal, 3), "tired": round(tired, 3),
