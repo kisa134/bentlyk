@@ -203,6 +203,14 @@ def run_worker(agent: Agent, interval: float) -> int:
             # right after boot instead of only every Nth beat.
             if time.time() - agent.state.last_pursue_ts >= PURSUE_EVERY_SEC:
                 line += f" | {agent.pursue()}"
+            # Learn one real example from the world (live price) — actual plasticity,
+            # weights that move from reality, not from its own text. Cheap, no LLM.
+            try:
+                lr = agent.learn_step()
+                if lr:
+                    line += f" | {lr}"
+            except Exception:  # pragma: no cover - never let learning break the worker
+                pass
             # Live its public life: post to its own channel on its own cadence (opt-in).
             if agent.maybe_publish():
                 line += " | posted to channel"

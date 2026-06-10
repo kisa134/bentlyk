@@ -106,6 +106,7 @@ class Settings:
     load_plugins: bool = False  # BENTLYK_LOAD_PLUGINS=1 to load self-authored tools as organs
     council: bool = True  # BENTLYK_COUNCIL=0 to disable the internal roles council (saves tokens)
     auto_post: bool = False  # BENTLYK_AUTO_POST=1: publish to its own channel on its own cadence
+    market_symbol: str = "BTCUSDT"  # the real signal its learnable component grounds in
 
     @property
     def llm_key(self) -> str:
@@ -182,6 +183,7 @@ class Settings:
             load_plugins=_env("BENTLYK_LOAD_PLUGINS") in ("1", "true", "yes"),
             council=_env("BENTLYK_COUNCIL", "1") in ("1", "true", "yes"),
             auto_post=_env("BENTLYK_AUTO_POST") in ("1", "true", "yes"),
+            market_symbol=_env("BENTLYK_MARKET_SYMBOL") or "BTCUSDT",
         )
 
     @property

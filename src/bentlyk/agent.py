@@ -12,6 +12,7 @@ may I act?") wraps the outer one ("goal -> plan -> act").
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 
 from . import attention
@@ -480,6 +481,58 @@ class Agent:
         from .axioms import list_axioms
 
         return list_axioms(self.store, limit=12)
+
+    # --- real plasticity: a learnable component grounded in a real signal ----------
+    def _load_learner(self):
+        from .learning import OnlineLearner
+
+        item = self.store.get("learner:price")
+        if item is not None:
+            try:
+                d = json.loads(item.content)
+                return OnlineLearner.from_json(d["learner"]), d.get("last_t")
+            except Exception:
+                pass
+        return OnlineLearner(dim=6), None
+
+    def _save_learner(self, learner, last_t) -> None:
+        self.store.add(MemoryItem(
+            id="learner:price", kind=MemoryKind.PROCEDURAL,
+            content=json.dumps({"learner": learner.to_json(), "last_t": last_t}),
+            tags=["learner", "singleton"], salience=0.9, embedding=[0.0],
+        ))
+
+    def learner_stats(self) -> dict:
+        learner, _ = self._load_learner()
+        return {"n": learner.n, "acc": round(learner.accuracy(), 3),
+                "recent": round(learner.recent_accuracy(), 3)}
+
+    def learn_step(self) -> str | None:
+        """Learn ONE real example from the live price stream: predict the next move from
+        past moves, then see what actually happened and move my weights toward the truth.
+
+        This is the first thing about me that genuinely changes from contact with reality,
+        not from my own text. No LLM call — pure online learning, grounded and measurable.
+        """
+
+        from .learning import OnlineLearner, features_from_returns  # noqa: F401
+        from .marketdata import recent_closes
+
+        data = recent_closes(self.settings.market_symbol)
+        if not data or len(data["closes"]) < 9:
+            return None
+        learner, last_t = self._load_learner()
+        if data["t"] == last_t:
+            return None  # no newly-closed candle — nothing real has happened yet
+        closes = data["closes"]
+        returns = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes)) if closes[i - 1]]
+        if len(returns) < 7:
+            return None
+        x = features_from_returns(returns[:-1])   # strictly past moves — no lookahead
+        y = 1 if returns[-1] > 0 else 0           # what the market actually did
+        learner.update(x, y)                      # predict, then learn from the truth
+        self._save_learner(learner, data["t"])
+        return f"learn: recent_acc {learner.recent_accuracy():.2f} n={learner.n}"
 
     def active_goals(self) -> list[MemoryItem]:
         return [
