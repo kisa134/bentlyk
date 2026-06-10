@@ -482,26 +482,28 @@ class Agent:
 
         return list_axioms(self.store, limit=12)
 
-    # --- real plasticity: a learnable component grounded in a real signal ----------
+    # --- real plasticity: a self-modifying population grounded in a real signal -----
+    _EVOLVE_EVERY = 60  # steps between retiring the worst recipe and spawning a mutant
+
     def _load_learner_state(self) -> dict:
-        from .learning import OnlineLearner
+        from .population import Population
 
         item = self.store.get("learner:price")
         if item is not None:
             try:
                 d = json.loads(item.content)
-                return {"learner": OnlineLearner.from_json(d["learner"]), "last_t": d.get("last_t"),
+                return {"pop": Population.from_json(d["pop"]), "last_t": d.get("last_t"),
                         "equity": d.get("equity", 1.0), "trades": d.get("trades", 0),
                         "wins": d.get("wins", 0), "pending": d.get("pending")}
             except Exception:
                 pass
-        return {"learner": OnlineLearner(dim=6), "last_t": None, "equity": 1.0,
+        return {"pop": Population(size=5), "last_t": None, "equity": 1.0,
                 "trades": 0, "wins": 0, "pending": None}
 
     def _save_learner_state(self, s: dict) -> None:
         self.store.add(MemoryItem(
             id="learner:price", kind=MemoryKind.PROCEDURAL,
-            content=json.dumps({"learner": s["learner"].to_json(), "last_t": s["last_t"],
+            content=json.dumps({"pop": s["pop"].to_json(), "last_t": s["last_t"],
                                 "equity": round(s["equity"], 6), "trades": s["trades"],
                                 "wins": s["wins"], "pending": s["pending"]}),
             tags=["learner", "singleton"], salience=0.9, embedding=[0.0],
@@ -509,19 +511,20 @@ class Agent:
 
     def learner_stats(self) -> dict:
         s = self._load_learner_state()
-        L = s["learner"]
-        return {"n": L.n, "acc": round(L.accuracy(), 3), "recent": round(L.recent_accuracy(), 3),
-                "equity": round(s["equity"], 4), "trades": s["trades"],
+        champ = s["pop"].champion()["learner"]
+        return {"n": champ.n, "acc": round(champ.accuracy(), 3), "recent": round(champ.recent_accuracy(), 3),
+                "equity": round(s["equity"], 4), "trades": s["trades"], "pop": len(s["pop"].members),
+                "gen": s["pop"].steps // self._EVOLVE_EVERY,
                 "winrate": round(s["wins"] / s["trades"], 3) if s["trades"] else 0.0}
 
     def learn_step(self) -> str | None:
-        """Learn from reality AND act on it, closing the loop the puppet never had:
-        predict the next move, take a paper position, see what actually happens, move my
-        weights toward the truth, and let the realized P&L press on my vitality. No LLM,
-        no lookahead. Energy now tracks real outcomes; curiosity = where I predict badly.
+        """Learn from reality, act on it, AND evolve my own features. A population of
+        feature-recipes learns online from the live price; the champion takes a paper
+        position; realized P&L presses on my vitality; periodically the worst recipe is
+        retired and a mutated champion replaces it. No LLM, no lookahead — open-ended
+        self-improvement of my learning organ, selected by unfakeable outcomes.
         """
 
-        from .learning import features_from_returns
         from .marketdata import recent_closes
 
         data = recent_closes(self.settings.market_symbol)
@@ -529,48 +532,45 @@ class Agent:
             return None
         s = self._load_learner_state()
         if data["t"] == s["last_t"]:
-            return None  # no newly-closed candle — nothing real has happened yet
+            return None
         closes = data["closes"]
         returns = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes)) if closes[i - 1]]
         if len(returns) < 7:
             return None
-        L = s["learner"]
+        pop = s["pop"]
         r_last = returns[-1]
-        y = 1 if r_last > 0 else 0
         pend = s["pending"]
         if pend:
             pos = float(pend.get("pos", 0.0))
-            pnl = pos * r_last                      # P&L of the position opened BEFORE this move
+            pnl = pos * r_last
             s["equity"] *= (1.0 + pnl)
             if pos != 0:
                 s["trades"] += 1
                 if pnl > 0:
                     s["wins"] += 1
-                # real selection pressure: my vitality reflects actual outcome, not a knob
-                if pnl > 0:
                     self.state.adjust(energy=+0.012, coherence=+0.01, pain=-0.01)
                 else:
                     self.state.adjust(energy=-0.012, pain=+0.02, distrust=+0.01)
-            feats = pend.get("features") or features_from_returns(returns[:-1])
-            hit = L.update(feats, y)
-            # intrinsic drive: being wrong is genuinely surprising → curiosity where I fail
-            self.state.adjust(surprise=+0.04, curiosity=+0.03) if hit == 0 else self.state.adjust(surprise=-0.01)
-        else:
-            L.update(features_from_returns(returns[:-1]), y)
-        # decide the next position — FPF risk discipline: act only on PROVEN edge + confidence
-        x_now = features_from_returns(returns)
-        prob = L.prob(x_now)
+        pop.observe(returns)  # every member learns one real example
+        champ = pop.champion()["learner"]
+        # intrinsic drive: curiosity rises where my best predictor still fails
+        if champ.recent_accuracy() < 0.5:
+            self.state.adjust(surprise=+0.03, curiosity=+0.03)
+        # self-modification: evolve my own feature recipes under selection
+        if pop.steps % self._EVOLVE_EVERY == 0:
+            pop.evolve()
+        # act only on PROVEN edge + confidence (FPF risk discipline; flat otherwise)
+        prob = pop.predict_next(returns)
         pos = 0.0
-        if L.n >= 120 and L.recent_accuracy() > 0.51:
+        if champ.n >= 120 and champ.recent_accuracy() > 0.51:
             if prob > 0.52:
                 pos = min(1.0, (prob - 0.5) * 4)
             elif prob < 0.48:
                 pos = -min(1.0, (0.5 - prob) * 4)
-        s["pending"] = {"features": x_now, "pos": round(pos, 3)}
+        s["pending"] = {"pos": round(pos, 3)}
         s["last_t"] = data["t"]
-        s["learner"] = L
         self._save_learner_state(s)
-        return f"learn acc {L.recent_accuracy():.2f} eq {s['equity']:.3f} n={L.n}"
+        return f"learn acc {champ.recent_accuracy():.2f} eq {s['equity']:.3f} gen {pop.steps // self._EVOLVE_EVERY}"
 
     def active_goals(self) -> list[MemoryItem]:
         return [
