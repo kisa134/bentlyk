@@ -483,56 +483,94 @@ class Agent:
         return list_axioms(self.store, limit=12)
 
     # --- real plasticity: a learnable component grounded in a real signal ----------
-    def _load_learner(self):
+    def _load_learner_state(self) -> dict:
         from .learning import OnlineLearner
 
         item = self.store.get("learner:price")
         if item is not None:
             try:
                 d = json.loads(item.content)
-                return OnlineLearner.from_json(d["learner"]), d.get("last_t")
+                return {"learner": OnlineLearner.from_json(d["learner"]), "last_t": d.get("last_t"),
+                        "equity": d.get("equity", 1.0), "trades": d.get("trades", 0),
+                        "wins": d.get("wins", 0), "pending": d.get("pending")}
             except Exception:
                 pass
-        return OnlineLearner(dim=6), None
+        return {"learner": OnlineLearner(dim=6), "last_t": None, "equity": 1.0,
+                "trades": 0, "wins": 0, "pending": None}
 
-    def _save_learner(self, learner, last_t) -> None:
+    def _save_learner_state(self, s: dict) -> None:
         self.store.add(MemoryItem(
             id="learner:price", kind=MemoryKind.PROCEDURAL,
-            content=json.dumps({"learner": learner.to_json(), "last_t": last_t}),
+            content=json.dumps({"learner": s["learner"].to_json(), "last_t": s["last_t"],
+                                "equity": round(s["equity"], 6), "trades": s["trades"],
+                                "wins": s["wins"], "pending": s["pending"]}),
             tags=["learner", "singleton"], salience=0.9, embedding=[0.0],
         ))
 
     def learner_stats(self) -> dict:
-        learner, _ = self._load_learner()
-        return {"n": learner.n, "acc": round(learner.accuracy(), 3),
-                "recent": round(learner.recent_accuracy(), 3)}
+        s = self._load_learner_state()
+        L = s["learner"]
+        return {"n": L.n, "acc": round(L.accuracy(), 3), "recent": round(L.recent_accuracy(), 3),
+                "equity": round(s["equity"], 4), "trades": s["trades"],
+                "winrate": round(s["wins"] / s["trades"], 3) if s["trades"] else 0.0}
 
     def learn_step(self) -> str | None:
-        """Learn ONE real example from the live price stream: predict the next move from
-        past moves, then see what actually happened and move my weights toward the truth.
-
-        This is the first thing about me that genuinely changes from contact with reality,
-        not from my own text. No LLM call — pure online learning, grounded and measurable.
+        """Learn from reality AND act on it, closing the loop the puppet never had:
+        predict the next move, take a paper position, see what actually happens, move my
+        weights toward the truth, and let the realized P&L press on my vitality. No LLM,
+        no lookahead. Energy now tracks real outcomes; curiosity = where I predict badly.
         """
 
-        from .learning import OnlineLearner, features_from_returns  # noqa: F401
+        from .learning import features_from_returns
         from .marketdata import recent_closes
 
         data = recent_closes(self.settings.market_symbol)
         if not data or len(data["closes"]) < 9:
             return None
-        learner, last_t = self._load_learner()
-        if data["t"] == last_t:
+        s = self._load_learner_state()
+        if data["t"] == s["last_t"]:
             return None  # no newly-closed candle — nothing real has happened yet
         closes = data["closes"]
         returns = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes)) if closes[i - 1]]
         if len(returns) < 7:
             return None
-        x = features_from_returns(returns[:-1])   # strictly past moves — no lookahead
-        y = 1 if returns[-1] > 0 else 0           # what the market actually did
-        learner.update(x, y)                      # predict, then learn from the truth
-        self._save_learner(learner, data["t"])
-        return f"learn: recent_acc {learner.recent_accuracy():.2f} n={learner.n}"
+        L = s["learner"]
+        r_last = returns[-1]
+        y = 1 if r_last > 0 else 0
+        pend = s["pending"]
+        if pend:
+            pos = float(pend.get("pos", 0.0))
+            pnl = pos * r_last                      # P&L of the position opened BEFORE this move
+            s["equity"] *= (1.0 + pnl)
+            if pos != 0:
+                s["trades"] += 1
+                if pnl > 0:
+                    s["wins"] += 1
+                # real selection pressure: my vitality reflects actual outcome, not a knob
+                if pnl > 0:
+                    self.state.adjust(energy=+0.012, coherence=+0.01, pain=-0.01)
+                else:
+                    self.state.adjust(energy=-0.012, pain=+0.02, distrust=+0.01)
+            feats = pend.get("features") or features_from_returns(returns[:-1])
+            hit = L.update(feats, y)
+            # intrinsic drive: being wrong is genuinely surprising → curiosity where I fail
+            self.state.adjust(surprise=+0.04, curiosity=+0.03) if hit == 0 else self.state.adjust(surprise=-0.01)
+        else:
+            L.update(features_from_returns(returns[:-1]), y)
+        # decide the next position — FPF risk discipline: act only on PROVEN edge + confidence
+        x_now = features_from_returns(returns)
+        prob = L.prob(x_now)
+        pos = 0.0
+        if L.n >= 120 and L.recent_accuracy() > 0.51:
+            if prob > 0.52:
+                pos = min(1.0, (prob - 0.5) * 4)
+            elif prob < 0.48:
+                pos = -min(1.0, (0.5 - prob) * 4)
+        s["pending"] = {"features": x_now, "pos": round(pos, 3)}
+        s["last_t"] = data["t"]
+        s["learner"] = L
+        self._save_learner_state(s)
+        return f"learn acc {L.recent_accuracy():.2f} eq {s['equity']:.3f} n={L.n}"
 
     def active_goals(self) -> list[MemoryItem]:
         return [

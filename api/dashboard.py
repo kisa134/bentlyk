@@ -99,14 +99,16 @@ class handler(BaseHTTPRequestHandler):
             + f'<div class="meta">порог {REACH_OUT_THRESHOLD:g} · <b>{html.escape(will)}</b> · тишина {u["silence_h"]} ч</div>'
             + "".join(_bar(k, u[k]) for k in ("longing", "drive", "withdrawal", "tired")))
 
-        ls = agent.learner_stats() if hasattr(agent, "learner_stats") else {"n": 0, "acc": 0, "recent": 0}
+        ls = agent.learner_stats() if hasattr(agent, "learner_stats") else {"n": 0, "acc": 0, "recent": 0, "equity": 1.0, "trades": 0, "winrate": 0}
         edge = ls["recent"] - 0.5
         edge_txt = ("учится — есть эдж" if edge > 0.04 else ("около случайного" if abs(edge) <= 0.04 else "хуже монетки"))
-        learn_card = _card("Научение (реальное, НЕ LLM) — предсказание рынка",
-            f'<div class="meta">примеров: <b>{ls["n"]}</b> · точность за жизнь: <b>{ls["acc"]:.2f}</b> · '
-            f'недавняя: <b>{ls["recent"]:.2f}</b> vs база 0.50 → <b>{edge_txt}</b></div>'
+        eq = ls.get("equity", 1.0)
+        eq_txt = f'{(eq-1)*100:+.2f}%'
+        learn_card = _card("Научение → действие (реальное, НЕ LLM)",
+            f'<div class="meta">примеров: <b>{ls["n"]}</b> · недавняя точность: <b>{ls["recent"]:.2f}</b> vs 0.50 → <b>{edge_txt}</b></div>'
             + _bar("recent", ls["recent"]) + _bar("baseline", 0.5)
-            + '<div class="meta">это единственная часть, что меняет себя от реальности. Если недавняя держится выше 0.5 — он реально научился. Если нет — мы это честно видим.</div>')
+            + f'<div class="meta" style="margin-top:.5rem">бумажный капитал: <b>{eq_txt}</b> · сделок: <b>{ls.get("trades",0)}</b> · винрейт: <b>{ls.get("winrate",0):.2f}</b></div>'
+            + '<div class="meta">это единственная часть, что меняет себя от реальности и действует на ней. Энергия теперь тянется за P&L, любопытство — за ошибкой. Держится выше 0.5 и капитал растёт — реально научился; нет — видим честно.</div>')
 
         tab_now = (
             learn_card
