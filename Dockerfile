@@ -7,8 +7,8 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY config ./config
-# [device] pulls in psutil so the body can sense its own hardware (CPU/RAM/disk).
-RUN pip install --no-cache-dir ".[device]"
+# [device] = psutil (hardware senses); [trading] = ccxt (market data for the engine).
+RUN pip install --no-cache-dir ".[device,trading]"
 
 # Env to set (see .env.example): BENTLYK_LLM_API_KEY (WaveSpeed wsk_...),
 # SUPABASE_URL, SUPABASE_KEY, TELEGRAM_BOT_TOKEN, and for self-authoring

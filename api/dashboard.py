@@ -111,8 +111,21 @@ class handler(BaseHTTPRequestHandler):
             f'популяция рецептов: <b>{ls.get("pop","?")}</b> · поколение: <b>{ls.get("gen",0)}</b></div>'
             + '<div class="meta">меняет себя от реальности и действует на ней; эволюционирует собственные признаки под отбором. Энергия тянется за P&L, любопытство — за ошибкой. Растёт точность и капитал — реально научился; нет — видим честно.</div>')
 
+        lb = agent.research_leaderboard() if hasattr(agent, "research_leaderboard") else {"board": []}
+        lb_rows = "".join(
+            f"<div class='item'><span class='when'>{r['oos_sharpe']:+.2f}</span>"
+            f"<span class='txt'>{html.escape(r['symbol'])} · {html.escape(r['strategy'])} "
+            f"<span class='muted'>{html.escape(str(r.get('params', {})))}</span></span>"
+            f"<span class='tags'>{r['oos_return']*100:+.0f}%</span></div>"
+            for r in lb.get("board", [])[:10])
+        lb_card = _card(
+            f"Квант-движок: топ стратегий по OOS-Sharpe ({lb.get('n_symbols', '?')} символов)",
+            (lb_rows or "<p class='muted'>сканирование ещё не запускалось (нужен ccxt на воркере + Manual Sync)</p>")
+            + '<div class="meta">вне-выборочный результат (walk-forward) — что выжило на невиданных данных. Высокий Sharpe тут ≠ гарантия; это кандидаты для бумажной проверки.</div>')
+
         tab_now = (
             learn_card
+            + lb_card
             + _card("Чем занят прямо сейчас", f'<div class="big">{html.escape(st.now_doing or "—")}</div>')
             + _card("Внимание / фокус", f'<div class="big">{html.escape(_describe_focus(st))}</div>' + _bar("focus", st.focus_strength))
             + _card("Витальные сигналы", "".join(_bar(s, getattr(st, s)) for s in _SIGNALS))

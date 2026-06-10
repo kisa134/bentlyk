@@ -211,6 +211,14 @@ def run_worker(agent: Agent, interval: float) -> int:
                     line += f" | {lr}"
             except Exception:  # pragma: no cover - never let learning break the worker
                 pass
+            # Systematic research: scan a real universe of strategies on a slow cadence
+            # (CPU, no LLM). Self-gated to ~every 30 min.
+            try:
+                rr = agent.research_step()
+                if rr:
+                    line += f" | {rr}"
+            except Exception:  # pragma: no cover
+                pass
             # Live its public life: post to its own channel on its own cadence (opt-in).
             if agent.maybe_publish():
                 line += " | posted to channel"

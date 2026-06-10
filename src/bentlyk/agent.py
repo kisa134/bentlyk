@@ -509,6 +509,45 @@ class Agent:
             tags=["learner", "singleton"], salience=0.9, embedding=[0.0],
         ))
 
+    def research_leaderboard(self) -> dict:
+        item = self.store.get("research:leaderboard")
+        if item is not None:
+            try:
+                return json.loads(item.content)
+            except Exception:
+                pass
+        return {"ts": 0, "board": []}
+
+    def research_step(self, *, min_gap_sec: float = 1800.0) -> str | None:
+        """Run the systematic engine over a real universe and store the leaderboard.
+        CPU-heavy but no LLM; called on a slow cadence. Needs ccxt (worker-only)."""
+        import time as _t
+
+        prev = self.research_leaderboard()
+        if _t.time() - prev.get("ts", 0) < min_gap_sec:
+            return None
+        try:
+            from .trading.data import history, top_symbols
+            from .trading.research import mass_research
+        except Exception:
+            return None
+        syms = top_symbols(limit=self.settings.market_universe)
+        if not syms:
+            return None
+        data = history(syms, timeframe="1h", limit=720)
+        if not data:
+            return None
+        board = mass_research(data)[:15]
+        self.store.add(MemoryItem(
+            id="research:leaderboard", kind=MemoryKind.PROCEDURAL,
+            content=json.dumps({"ts": _t.time(), "n_symbols": len(data), "board": board}),
+            tags=["research", "singleton"], salience=0.9, embedding=[0.0],
+        ))
+        if board:
+            b = board[0]
+            return f"research: {len(data)} symbols; top {b['symbol']} {b['strategy']} OOS-Sharpe {b['oos_sharpe']}"
+        return f"research: scanned {len(data)} symbols, no surviving edge"
+
     def learner_stats(self) -> dict:
         s = self._load_learner_state()
         champ = s["pop"].champion()["learner"]

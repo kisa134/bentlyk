@@ -107,6 +107,7 @@ class Settings:
     council: bool = True  # BENTLYK_COUNCIL=0 to disable the internal roles council (saves tokens)
     auto_post: bool = False  # BENTLYK_AUTO_POST=1: publish to its own channel on its own cadence
     market_symbol: str = "BTCUSDT"  # the real signal its learnable component grounds in
+    market_universe: int = 24  # how many top symbols the systematic engine scans
 
     @property
     def llm_key(self) -> str:
@@ -184,6 +185,7 @@ class Settings:
             council=_env("BENTLYK_COUNCIL", "1") in ("1", "true", "yes"),
             auto_post=_env("BENTLYK_AUTO_POST") in ("1", "true", "yes"),
             market_symbol=_env("BENTLYK_MARKET_SYMBOL") or "BTCUSDT",
+            market_universe=int(_env("BENTLYK_MARKET_UNIVERSE") or "24"),
         )
 
     @property
