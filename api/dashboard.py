@@ -387,7 +387,7 @@ _PAGE_HEAD = """<!doctype html>
   .foot { color:var(--mut); font-size:.74rem; text-align:center; margin-top:1.4rem; opacity:.6; }
 </style></head>
 <body><div class="wrap">
-  <h1>&#128062; Bentlyk <a href="/api/live" style="font-size:.8rem;color:var(--acc);text-decoration:none">&#9654; live-лог</a></h1>
+  <h1>&#128062; Bentlyk <a href="/api/live" style="font-size:.8rem;color:var(--acc);text-decoration:none">&#9654; live-лог</a> <a href="/api/terminal" style="font-size:.8rem;color:var(--acc);text-decoration:none">&#128202; терминал</a></h1>
   <p class="sub">живое окно в его нутро — обновление каждые 45с</p>
 """
 
