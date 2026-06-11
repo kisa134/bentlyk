@@ -509,6 +509,58 @@ class Agent:
             tags=["learner", "singleton"], salience=0.9, embedding=[0.0],
         ))
 
+    # --- the evolving colony: hundreds of live paper traders under genetic selection ---
+    _COLONY_EVOLVE_EVERY = 40
+
+    def _load_colony(self):
+        from .colony import Colony
+
+        item = self.store.get("colony:btc")
+        if item is not None:
+            try:
+                d = json.loads(item.content)
+                return Colony.from_json(d["colony"]), d.get("last_t")
+            except Exception:
+                pass
+        return Colony(size=150), None
+
+    def _save_colony(self, colony, last_t) -> None:
+        self.store.add(MemoryItem(
+            id="colony:btc", kind=MemoryKind.PROCEDURAL,
+            content=json.dumps({"colony": colony.to_json(), "last_t": last_t}),
+            tags=["colony", "singleton"], salience=0.9, embedding=[0.0],
+        ))
+
+    def colony_stats(self) -> dict:
+        return self._load_colony()[0].stats()
+
+    def colony_step(self) -> str | None:
+        """Advance the colony one real bar: every trader trades forward live, the best
+        are bred and the worst die (genetic selection on real forward equity), and
+        winning trades log the market context they happened in. No backtest — the only
+        judge is what actually earns money going forward."""
+        from .marketdata import recent_closes
+
+        data = recent_closes(self.settings.market_symbol)
+        if not data or len(data["closes"]) < 9:
+            return None
+        colony, last_t = self._load_colony()
+        if data["t"] == last_t:
+            return None
+        closes = data["closes"]
+        returns = [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes)) if closes[i - 1]]
+        if len(returns) < 3:
+            return None
+        colony.step(returns)
+        if colony.steps % self._COLONY_EVOLVE_EVERY == 0:
+            colony.evolve()
+        self._save_colony(colony, data["t"])
+        s = colony.stats()
+        # grounded drive: the colony finding forward edge lifts curiosity; failing stings
+        if s["best_equity"] > 1.02:
+            self.state.adjust(curiosity=+0.02, energy=+0.01)
+        return f"colony g{s['gen']} best {s['best_equity']:.2f} med {s['median_equity']:.2f} win {s['winrate']:.2f}"
+
     def research_leaderboard(self) -> dict:
         item = self.store.get("research:leaderboard")
         if item is not None:

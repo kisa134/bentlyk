@@ -211,12 +211,12 @@ def run_worker(agent: Agent, interval: float) -> int:
                     line += f" | {lr}"
             except Exception:  # pragma: no cover - never let learning break the worker
                 pass
-            # Systematic research: scan a real universe of strategies on a slow cadence
-            # (CPU, no LLM). Self-gated to ~every 30 min.
+            # The evolving colony: hundreds of paper traders learn LIVE under genetic
+            # selection on real forward results (no backtests). Cheap, no LLM.
             try:
-                rr = agent.research_step()
-                if rr:
-                    line += f" | {rr}"
+                cr = agent.colony_step()
+                if cr:
+                    line += f" | {cr}"
             except Exception:  # pragma: no cover
                 pass
             # Live its public life: post to its own channel on its own cadence (opt-in).

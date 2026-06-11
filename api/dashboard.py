@@ -111,17 +111,18 @@ class handler(BaseHTTPRequestHandler):
             f'популяция рецептов: <b>{ls.get("pop","?")}</b> · поколение: <b>{ls.get("gen",0)}</b></div>'
             + '<div class="meta">меняет себя от реальности и действует на ней; эволюционирует собственные признаки под отбором. Энергия тянется за P&L, любопытство — за ошибкой. Растёт точность и капитал — реально научился; нет — видим честно.</div>')
 
-        lb = agent.research_leaderboard() if hasattr(agent, "research_leaderboard") else {"board": []}
-        lb_rows = "".join(
-            f"<div class='item'><span class='when'>{r['oos_sharpe']:+.2f}</span>"
-            f"<span class='txt'>{html.escape(r['symbol'])} · {html.escape(r['strategy'])} "
-            f"<span class='muted'>{html.escape(str(r.get('params', {})))}</span></span>"
-            f"<span class='tags'>{r['oos_return']*100:+.0f}%</span></div>"
-            for r in lb.get("board", [])[:10])
+        cs = agent.colony_stats() if hasattr(agent, "colony_stats") else {}
+        pat = cs.get("pattern", {})
+        pat_html = (" · ".join(f"{k} {v:+.2f}" for k, v in pat.items())) if pat else "копит выигрыши…"
+        be = cs.get("best_equity", 1.0)
         lb_card = _card(
-            f"Квант-движок: топ стратегий по OOS-Sharpe ({lb.get('n_symbols', '?')} символов)",
-            (lb_rows or "<p class='muted'>сканирование ещё не запускалось (нужен ccxt на воркере + Manual Sync)</p>")
-            + '<div class="meta">вне-выборочный результат (walk-forward) — что выжило на невиданных данных. Высокий Sharpe тут ≠ гарантия; это кандидаты для бумажной проверки.</div>')
+            f"Эволюционная колония — живой форвард (поколение {cs.get('gen', 0)})",
+            f'<div class="meta">кошельков: <b>{cs.get("pop", 0)}</b> · шагов: <b>{cs.get("steps", 0)}</b> · '
+            f'лучший: <b>{(be-1)*100:+.1f}%</b> · медиана: <b>{(cs.get("median_equity",1)-1)*100:+.1f}%</b> · '
+            f'винрейт: <b>{cs.get("winrate",0):.2f}</b></div>'
+            + _bar("лучший", min(1.0, max(0.0, be - 0.5)))
+            + f'<div class="meta" style="margin-top:.5rem"><b>Паттерн выигрышей</b> (при каких условиях случались прибыльные сделки): {html.escape(pat_html)}</div>'
+            + '<div class="meta">сотни кошельков торгуют ВЖИВУЮ вперёд, эволюционируют по реальному P&L (без бэктестов). «Лучший» бывает удачей — поэтому паттерн пере-проверяется на будущем: настоящий держится, случайный гаснет.</div>')
 
         tab_now = (
             learn_card
