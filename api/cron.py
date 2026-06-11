@@ -40,6 +40,13 @@ class handler(BaseHTTPRequestHandler):
             if cycle.reflection:
                 summary += f" | {cycle.reflection.summary}"
 
+            # Live learning runs here too, in case the worker is down.
+            for fn in ("learn_step", "colony_step"):
+                try:
+                    getattr(agent, fn)()
+                except Exception:
+                    pass
+
             # Proactivity: reach out to the owner if it's due (interval + backoff).
             owner = owner_id(agent)
             token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()

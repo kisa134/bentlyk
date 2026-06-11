@@ -6,5 +6,5 @@
     "api/*.py": { "maxDuration": 60, "includeFiles": "src/**" }
   },
   "rewrites": [{ "source": "/", "destination": "/api/dashboard" }],
-  "crons": [{ "path": "/api/cron", "schedule": "0 3 * * *" }]
+  "crons": [{ "path": "/api/cron", "schedule": "*/5 * * * *" }]
 }

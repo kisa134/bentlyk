@@ -131,6 +131,11 @@ _HEAD = """<!doctype html><html lang="ru"><head><meta charset="utf-8">
 """
 
 _JS = """<script>function tt(){var l=document.body.classList.toggle('light');try{localStorage.setItem('bk_theme',l?'light':'dark')}catch(e){}}
-try{if(localStorage.getItem('bk_theme')==='light')document.body.classList.add('light')}catch(e){}</script>"""
+try{if(localStorage.getItem('bk_theme')==='light')document.body.classList.add('light')}catch(e){}
+// Drive the live colony from the browser (the Render worker is unreliable). Each tick
+// is candle-gated server-side, so polling often = at most one real step per minute.
+function tick(){fetch('/api/tick').catch(function(){});}
+tick(); setInterval(tick, 8000);
+</script>"""
 
 _FOOT = f'<div class="muted" style="text-align:center;margin-top:1.4rem;font-size:.74rem">обновлено {time.strftime("%H:%M:%S")} · живой форвард, без бэктестов</div></div></body></html>'
