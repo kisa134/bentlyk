@@ -19,23 +19,20 @@ def _exchange(name: str = "binance"):
         return None
 
 
-def top_symbols(name: str = "binance", quote: str = "USDT", limit: int = 30) -> list[str]:
-    """The most liquid spot symbols against ``quote`` — a real universe to scan."""
-    ex = _exchange(name)
-    if ex is None:
-        return []
-    try:
-        ex.load_markets()
-        tickers = ex.fetch_tickers()
-    except Exception:
-        return []
-    rows = []
-    for sym, t in tickers.items():
-        if sym.endswith("/" + quote) and ":" not in sym:
-            vol = (t.get("quoteVolume") or 0)
-            rows.append((vol, sym))
-    rows.sort(reverse=True)
-    return [s for _, s in rows[:limit]]
+# A curated universe of liquid pairs. Hardcoded on purpose: fetching ALL exchange
+# tickers (load_markets + fetch_tickers) is a huge payload that can hang/OOM a small
+# worker. These are fetched one OHLCV call at a time, which is light and bounded.
+_UNIVERSE = [
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT", "DOGE/USDT",
+    "ADA/USDT", "AVAX/USDT", "LINK/USDT", "TRX/USDT", "DOT/USDT", "MATIC/USDT",
+    "LTC/USDT", "BCH/USDT", "NEAR/USDT", "APT/USDT", "ARB/USDT", "OP/USDT",
+    "ATOM/USDT", "FIL/USDT", "INJ/USDT", "SUI/USDT", "TIA/USDT", "SEI/USDT",
+]
+
+
+def top_symbols(name: str = "binance", quote: str = "USDT", limit: int = 24) -> list[str]:
+    """A curated, liquid universe — light and safe (no full-exchange ticker dump)."""
+    return _UNIVERSE[:limit]
 
 
 def history(symbols: list[str], timeframe: str = "1h", limit: int = 720,
