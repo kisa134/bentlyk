@@ -7,8 +7,9 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY config ./config
-# [device] = psutil (hardware senses); [trading] = ccxt (market data for the engine).
-RUN pip install --no-cache-dir ".[device,trading]"
+# [device] = psutil (hardware senses). The live colony fetches prices via stdlib, so
+# no heavy market deps are needed to boot; ccxt (research engine) stays optional/off.
+RUN pip install --no-cache-dir ".[device]"
 
 # Env to set (see .env.example): BENTLYK_LLM_API_KEY (WaveSpeed wsk_...),
 # SUPABASE_URL, SUPABASE_KEY, TELEGRAM_BOT_TOKEN, and for self-authoring
