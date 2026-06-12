@@ -14,19 +14,68 @@ from __future__ import annotations
 
 import random
 
-FEATURES = ["mom5", "mom20", "last", "zscore", "vol"]
+# Features encode the elementary structure of a price move — the phases the trader's
+# own theory names: is the trend ACCELERATING and CONTINUING, or DECELERATING and
+# turning over? Each is a real, lookahead-free measurement from the return stream,
+# clipped to [-1, 1]. The colony's genetic search learns which combinations precede
+# forward profit; we only supply honest structural signal, not a verdict.
+#
+#   mom_fast  immediate push        — mean of the last 3 bars (where price is going now)
+#   mom_slow  established trend      — mean of the last 12 bars (the prevailing direction)
+#   accel     curvature             — is the push speeding up (+) or stalling (-)? continuation vs deceleration
+#   persist   cleanliness of trend  — net directional agreement of recent bars; high = orderly trend, ~0 = chop
+#   pullback  retracement structure — shallow counter-move in trend (+, continuation) vs deep give-back (-, reversal)
+#   stretch   exhaustion            — distance from short mean in vol units; extreme = stretched, reversal risk
+#   volx      regime                — short vol vs long vol: expansion (+, impulse/breakout) vs compression (-)
+FEATURES = ["mom_fast", "mom_slow", "accel", "persist", "pullback", "stretch", "volx"]
 DIM = len(FEATURES)
 
 
+def _clip(x: float) -> float:
+    return max(-1.0, min(1.0, x))
+
+
 def features(returns: list[float]) -> list[float]:
-    def clip(x):
-        return max(-1.0, min(1.0, x))
-    w20 = returns[-20:] if returns else [0.0]
-    mu = sum(w20) / len(w20)
-    vol = (sum((r - mu) ** 2 for r in w20) / len(w20)) ** 0.5
-    last = returns[-1] if returns else 0.0
-    return [clip(sum(returns[-5:]) * 40), clip(sum(w20) * 15), clip(last * 120),
-            clip((last - mu) / (vol + 1e-9) / 3.0), clip(vol * 200)]
+    r = returns or [0.0]
+    n = len(r)
+
+    def mean(xs):
+        return sum(xs) / len(xs) if xs else 0.0
+
+    fast = mean(r[-3:])
+    slow = mean(r[-12:])
+    prev = mean(r[-6:-3]) if n >= 6 else fast          # the push just before the latest one
+    accel = fast - prev                                 # curvature: momentum of momentum
+
+    win = r[-10:]                                        # cleanliness of the recent trend
+    persist = sum(1 if x > 0 else (-1 if x < 0 else 0) for x in win) / max(1, len(win))
+
+    # Reconstruct the recent price path to read retracement and stretch — structure, not just speed.
+    path = [1.0]
+    for x in r[-20:]:
+        path.append(path[-1] * (1.0 + x))
+    hi, lo, last = max(path), min(path), path[-1]
+    span = (hi - lo) or 1e-9
+    trend_sign = 1.0 if slow > 0 else (-1.0 if slow < 0 else 0.0)
+    if trend_sign >= 0:                                 # in an uptrend a shallow dip from the high = continuation
+        retr = (hi - last) / span
+    else:                                               # in a downtrend a shallow bounce from the low = continuation
+        retr = (last - lo) / span
+    pullback = trend_sign * (1.0 - 2.0 * retr)          # +: shallow/aligned (continuation)  −: deep give-back (reversal)
+
+    mu = mean(path)
+    sd = (sum((p - mu) ** 2 for p in path) / len(path)) ** 0.5
+    stretch = (last - mu) / (sd + 1e-9)                 # how far stretched from the mean (exhaustion)
+
+    def vol(xs):
+        m = mean(xs)
+        return (sum((x - m) ** 2 for x in xs) / len(xs)) ** 0.5 if xs else 0.0
+
+    vshort, vlong = vol(r[-5:]), vol(r[-20:])
+    volx = vshort / (vlong + 1e-9) - 1.0                 # >0 expansion (impulse)  <0 compression (coil)
+
+    return [_clip(fast * 200), _clip(slow * 120), _clip(accel * 300),
+            _clip(persist), _clip(pullback), _clip(stretch / 3.0), _clip(volx)]
 
 
 class Trader:
@@ -163,12 +212,23 @@ class Colony:
 
     @classmethod
     def from_json(cls, d: dict) -> "Colony":
+        rng = random.Random()
+
+        def fit(w):
+            """Migrate a genome to the current DIM — keep learned weights, neutral-seed new features."""
+            w = list(w)
+            if len(w) < DIM:
+                w = w + [rng.gauss(0, 0.1) for _ in range(DIM - len(w))]
+            return w[:DIM]
+
         traders = []
         for td in d.get("traders", []):
-            t = Trader(w=td["w"], thr=td["thr"])
+            t = Trader(w=fit(td["w"]), thr=td["thr"])
             t.equity, t.pos, t.trades, t.wins = td.get("equity", 1.0), td.get("pos", 0), td.get("trades", 0), td.get("wins", 0)
-            t.last_f = td.get("f")
+            f = td.get("f")
+            t.last_f = f if (f and len(f) == DIM) else None    # stale-dim context can't be scored; drop it
             traders.append(t)
-        winners = [(w[0], w[1]) for w in d.get("winners", []) if w[0]]
+        # Winning contexts from an older feature layout would corrupt centroid/seed math — keep only matching-dim ones.
+        winners = [(w[0], w[1]) for w in d.get("winners", []) if w[0] and len(w[0]) == DIM]
         return cls(traders=traders, winners=winners, steps=d.get("steps", 0), gen=d.get("gen", 0),
                    history=d.get("history", []), feed=d.get("feed", []))
